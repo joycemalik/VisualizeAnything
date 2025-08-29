@@ -3,18 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Datanaut.ai - Advanced Data Analytics</title>
+  <title>Datanaut.ai - Data Analytics</title>
   <style>
-    :root {
-      --primary-bg: #0f0f23;
-      --secondary-bg: #1a1a2e;
-      --accent-color: #10a37f;
-      --text-primary: #e4e4e7;
-      --text-secondary: #a1a1aa;
-      --border-color: #27272a;
-      --mathematical-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-
     * {
       margin: 0;
       padding: 0;
@@ -22,151 +12,46 @@
     }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--primary-bg);
-      color: var(--text-primary);
-      overflow-x: hidden;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      background: #ffffff;
+      color: #000000;
+      line-height: 1.6;
       min-height: 100vh;
     }
 
-    /* Mathematical background animation */
-    .math-background {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: -1;
-      opacity: 0.1;
-    }
-
-    .math-grid {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      background-image: 
-        linear-gradient(rgba(16, 163, 127, 0.1) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(16, 163, 127, 0.1) 1px, transparent 1px);
-      background-size: 50px 50px;
-      animation: gridMove 20s linear infinite;
-    }
-
-    @keyframes gridMove {
-      0% { transform: translate(0, 0); }
-      100% { transform: translate(50px, 50px); }
-    }
-
-    .math-formulas {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      font-size: 14px;
-      font-family: 'Courier New', monospace;
-      color: rgba(16, 163, 127, 0.2);
-    }
-
-    .formula {
-      position: absolute;
-      animation: float 15s infinite linear;
-      white-space: nowrap;
-    }
-
-    @keyframes float {
-      0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
-      10% { opacity: 1; }
-      90% { opacity: 1; }
-      100% { transform: translateY(-100px) rotate(360deg); opacity: 0; }
-    }
-
     .container {
-      max-width: 1200px;
+      max-width: 800px;
       margin: 0 auto;
-      padding: 60px 40px;
+      padding: 80px 40px;
       text-align: center;
-      position: relative;
-      z-index: 1;
-    }
-
-    .hero-section {
-      margin-bottom: 80px;
-    }
-
-    .logo {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      margin-bottom: 32px;
-    }
-
-    .logo-icon {
-      width: 60px;
-      height: 60px;
-      background: var(--mathematical-gradient);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      color: white;
-      box-shadow: 0 10px 30px rgba(16, 163, 127, 0.3);
     }
 
     h1 {
-      font-size: 72px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #e4e4e7, #10a37f);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 24px;
-      letter-spacing: -2px;
+      font-size: 48px;
+      font-weight: 300;
+      color: #000000;
+      margin-bottom: 16px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
     }
 
     .subtitle {
-      font-size: 24px;
-      color: var(--text-secondary);
-      margin-bottom: 48px;
-      max-width: 600px;
-      margin-left: auto;
-      margin-right: auto;
-      line-height: 1.4;
+      font-size: 16px;
+      color: #666666;
+      margin-bottom: 80px;
+      font-weight: 300;
+      letter-spacing: 1px;
     }
 
     .upload-section {
-      background: var(--secondary-bg);
-      border: 2px dashed var(--border-color);
-      border-radius: 24px;
+      border: 2px solid #000000;
       padding: 60px 40px;
       margin-bottom: 60px;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
+      transition: all 0.2s ease;
     }
 
     .upload-section:hover {
-      border-color: var(--accent-color);
-      background: rgba(16, 163, 127, 0.05);
-    }
-
-    .upload-content {
-      position: relative;
-      z-index: 2;
-    }
-
-    .upload-icon {
-      width: 80px;
-      height: 80px;
-      background: var(--accent-color);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 24px;
-      font-size: 32px;
-      color: white;
-      box-shadow: 0 8px 25px rgba(16, 163, 127, 0.4);
+      background: #f8f8f8;
     }
 
     input[type="file"] {
@@ -174,163 +59,110 @@
     }
 
     .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
+      display: inline-block;
       padding: 16px 32px;
-      font-size: 18px;
-      font-weight: 600;
-      color: white;
-      background: var(--accent-color);
-      border: none;
-      border-radius: 16px;
+      font-size: 14px;
+      font-weight: 400;
+      color: #ffffff;
+      background: #000000;
+      border: 2px solid #000000;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 0.2s ease;
       text-decoration: none;
-      box-shadow: 0 4px 15px rgba(16, 163, 127, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-family: inherit;
     }
 
     .btn:hover {
-      background: #0e8b6f;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(16, 163, 127, 0.4);
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 32px;
-      margin-bottom: 60px;
-    }
-
-    .feature-card {
-      background: var(--secondary-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 20px;
-      padding: 32px;
-      text-align: left;
-      transition: all 0.3s ease;
-    }
-
-    .feature-card:hover {
-      transform: translateY(-4px);
-      border-color: var(--accent-color);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    }
-
-    .feature-icon {
-      width: 50px;
-      height: 50px;
-      background: var(--mathematical-gradient);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 20px;
-      font-size: 20px;
-    }
-
-    .feature-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: var(--text-primary);
-    }
-
-    .feature-description {
-      color: var(--text-secondary);
-      line-height: 1.6;
+      background: #ffffff;
+      color: #000000;
     }
 
     .dataset-list {
-      background: var(--secondary-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 20px;
-      padding: 32px;
+      border: 1px solid #000000;
+      padding: 40px;
       text-align: left;
+      margin-top: 40px;
     }
 
-    .dataset-list h3 {
-      color: var(--text-primary);
-      margin-bottom: 20px;
-      font-size: 24px;
+    .dataset-list h2 {
+      color: #000000;
+      margin-bottom: 30px;
+      font-size: 18px;
+      font-weight: 400;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid #000000;
+      padding-bottom: 10px;
     }
 
     .dataset-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px;
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      margin-bottom: 12px;
-      transition: all 0.3s ease;
+      padding: 16px 0;
+      border-bottom: 1px solid #e0e0e0;
+      transition: all 0.2s ease;
+    }
+
+    .dataset-item:last-child {
+      border-bottom: none;
     }
 
     .dataset-item:hover {
-      border-color: var(--accent-color);
-      background: rgba(16, 163, 127, 0.05);
+      background: #f8f8f8;
+      padding-left: 16px;
     }
 
-    .dataset-name {
-      font-weight: 500;
-      color: var(--text-primary);
-    }
-
-    .dataset-meta {
+    .dataset-item a {
+      text-decoration: none;
+      color: #000000;
+      font-weight: 400;
       font-size: 14px;
-      color: var(--text-secondary);
+      letter-spacing: 0.5px;
+    }
+
+    .dataset-item a:hover {
+      text-decoration: underline;
+    }
+
+    .no-datasets {
+      color: #666666;
+      font-style: italic;
+      text-align: center;
+      padding: 40px 0;
     }
 
     @media (max-width: 768px) {
-      h1 {
-        font-size: 48px;
-      }
-      
-      .subtitle {
-        font-size: 18px;
-      }
-      
       .container {
+        padding: 40px 20px;
+      }
+      
+      h1 {
+        font-size: 32px;
+      }
+      
+      .upload-section {
         padding: 40px 20px;
       }
     }
   </style>
 </head>
-
-    .dataset-item {
-      padding: 12px 16px;
-      background: #fff;
-      margin-bottom: 10px;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-
-    .dataset-item a {
-      text-decoration: none;
-      color: #333;
-      font-weight: bold;
-    }
-
-    .dataset-item a:hover {
-      color: #007bff;
-    }
-  </style>
-</head>
 <body>
   <div class="container">
-    <h1>🚀 Datanaut.ai</h1>
+    <h1>Datanaut</h1>
+    <p class="subtitle">Data Analytics Platform</p>
 
-    <!-- Upload form -->
-    <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
-      {% csrf_token %}
-      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
-      <label for="fileInput" class="btn">Upload Dataset</label>
-    </form>
+    <!-- Upload Section -->
+    <div class="upload-section">
+      <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
+        {% csrf_token %}
+        <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
+        <label for="fileInput" class="btn">Upload Dataset</label>
+      </form>
+    </div>
 
-    <!-- List of uploaded datasets -->
+    <!-- Dataset List -->
     <div class="dataset-list">
-      <h2>📂 Your Datasets</h2>
+      <h2>Datasets</h2>
       {% if datasets %}
         {% for dataset in datasets %}
           <div class="dataset-item">
@@ -340,7 +172,7 @@
           </div>
         {% endfor %}
       {% else %}
-        <p>No datasets uploaded yet.</p>
+        <p class="no-datasets">No datasets uploaded yet.</p>
       {% endif %}
     </div>
   </div>
