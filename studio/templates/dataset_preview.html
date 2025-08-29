@@ -3,287 +3,719 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Dataset Preview - Datanaut.ai</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <title>Datanaut.ai - {{ dataset.name }}</title>
   <style>
-    :root { --bg:#f8f9fb; --text:#222; --muted:#666; --card:#fff; --brand:#111; }
+    :root { 
+      /* Light theme variables */
+      --bg-primary: #ffffff;
+      --bg-secondary: #f7f7f8;
+      --bg-tertiary: #ececf1;
+      --text-primary: #2d3748;
+      --text-secondary: #4a5568;
+      --text-muted: #718096;
+      --border-color: #e2e8f0;
+      --border-light: #f1f5f9;
+      --sidebar-bg: #f7f7f8;
+      --chart-bg: #ffffff;
+      --btn-primary: #10a37f;
+      --btn-primary-hover: #0e8b6f;
+      --btn-secondary: #f7f7f8;
+      --btn-secondary-hover: #ececf1;
+      --error-bg: #fed7d7;
+      --error-border: #fc8181;
+      --error-text: #c53030;
+      --success-bg: #c6f6d5;
+      --success-border: #68d391;
+      --shadow: rgba(0,0,0,0.05);
+      --shadow-lg: rgba(0,0,0,0.1);
+      --message-user-bg: #10a37f;
+      --message-bot-bg: #f7f7f8;
+    }
 
-    * { box-sizing: border-box; }
-    body {
+    [data-theme="dark"] {
+      /* Dark theme variables - Pure ChatGPT style */
+      --bg-primary: #212121;
+      --bg-secondary: #2f2f2f;
+      --bg-tertiary: #3c3c3c;
+      --text-primary: #ececec;
+      --text-secondary: #c5c5c5;
+      --text-muted: #8e8ea0;
+      --border-color: #4d4d4f;
+      --border-light: #565869;
+      --sidebar-bg: #171717;
+      --chart-bg: #2f2f2f;
+      --btn-primary: #10a37f;
+      --btn-primary-hover: #0e8b6f;
+      --btn-secondary: #3c3c3c;
+      --btn-secondary-hover: #4d4d4f;
+      --error-bg: #4a1e1e;
+      --error-border: #c53030;
+      --error-text: #fc8181;
+      --success-bg: #1e4a28;
+      --success-border: #68d391;
+      --shadow: rgba(0,0,0,0.3);
+      --shadow-lg: rgba(0,0,0,0.5);
+      --message-user-bg: #2f2f2f;
+      --message-bot-bg: transparent;
+    }
+
+    * { 
+      box-sizing: border-box; 
       margin: 0;
-      padding: 40px 20px;
-      background: var(--bg);
-      color: var(--text);
-      font-family: "Inter", system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+      padding: 0;
+    }
+    
+    body {
+      font-family: "Söhne", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.2s ease, color 0.2s ease;
+      overflow-x: hidden;
     }
 
-    .wrap { max-width: 1100px; margin: 0 auto; }
-
-    h1 {
-      margin: 0 0 8px 0;
-      text-align: center;
-      font-weight: 700;
-      font-size: 40px;
-      letter-spacing: 0.3px;
-      color: var(--brand);
-    }
-
-    .sub {
-      text-align: center;
-      color: var(--muted);
-      margin: 0 0 28px 0;
-      font-size: 18px;
-    }
-
-    /* Card preview */
-    .card {
-      position: relative;
-      background: var(--card);
-      border-radius: 20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.08);
-      padding: 18px;
-      overflow: hidden;
-      transition: transform .15s ease, box-shadow .15s ease;
-      cursor: pointer;
-    }
-    .card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 16px 40px rgba(0,0,0,.12);
-    }
-
-    .table-wrap { overflow: auto; border-radius: 14px; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      border-radius: 14px;
-      overflow: hidden;
-      background: #fff;
-    }
-    th, td {
-      padding: 12px 14px;
-      text-align: left;
-      border-bottom: 1px solid #eee;
-      white-space: nowrap;
-    }
-    th {
-      background: #1f1f1f;
-      color: #fff;
-      font-weight: 600;
-      border-bottom: none;
-    }
-    tr:nth-child(even) td { background: #fafbfc; }
-
-    .fade-mask {
-      pointer-events: none;
-      position: absolute;
-      left: 0; right: 0; bottom: 0;
-      height: 90px;
-      background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, #fff 70%);
-    }
-
-    .hint {
-      margin: 14px 6px 0;
-      color: var(--muted);
-      font-size: 14px;
-      text-align: right;
-    }
-
-    /* Sidebar (canvas style) */
-   .sidebar {
-      position: fixed;
-      top: 0;
-      right: -70%; /* hidden initially on the right */
-      width: 70%;
-      height: 100%;
-      background: #fff;
-      border-left: 1px solid #ddd; /* changed border to left */
-      box-shadow: -2px 0 8px rgba(0,0,0,0.3); /* shadow on the left side */
-      overflow-y: auto;
-      transition: right 0.3s ease-in-out; /* animate right instead of left */
-      z-index: 1000;
-      padding: 20px;
-    }
-
-    .sidebar.active {
-      right: 0; /* slide in from right */
-    }
-
-     .chat-input {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      background: white;
-      border-top: 1px solid #ddd;
-      padding: 10px;
+    /* ChatGPT-like layout */
+    .app-container {
       display: flex;
-      gap: 10px;
-      box-sizing: border-box;
-    }
-
-    .chat-input input {
-      flex: 1;
-      padding: 10px;
-      font-size: 14px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      outline: none;
-    }
-
-    .chat-input button {
-      padding: 10px 16px;
-      background: #4f46e5;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    .chat-input button:hover {
-      background: #4338ca;
-    }
-
-    .result-table {
-      border-collapse: collapse;
-      margin-top: 15px;
+      height: 100vh;
       width: 100%;
-      font-size: 14px;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      background: white;
-    }
-    .result-table th,
-    .result-table td {
-      border: 1px solid #e5e7eb;
-      padding: 12px 14px;
-      text-align: left;
-    }
-    .result-table th {
-      background: #1f1f1f;
-      color: white;
-      font-weight: 600;
-      border: none;
-    }
-    .result-table tr:nth-child(even) td {
-      background: #fafbfc;
-    }
-    .result-table tr:hover td {
-      background: #f0f9ff;
     }
 
-
-    .overlay {
-      position: fixed;
-      top:0; left:0;
-      width:100%; height:100%;
-      background:rgba(0,0,0,0.3);
-      display:none;
-      z-index:900;
+    /* Sidebar Navigation */
+    .sidebar-nav {
+      width: 260px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: transform 0.3s ease;
     }
-    .overlay.active { display:block; }
 
-    /* Chat Messages */
-    .chat-container {
+    .sidebar-nav.collapsed {
+      transform: translateX(-100%);
+    }
+
+    .sidebar-header {
       padding: 20px;
-      margin-bottom: 80px; /* Space for input bar */
-      max-height: 60vh;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .sidebar-header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    .dataset-info {
+      font-size: 14px;
+      color: var(--text-secondary);
+      background: var(--bg-secondary);
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    .sidebar-content {
+      flex: 1;
+      padding: 20px;
       overflow-y: auto;
+    }
+
+    .suggestions-section, .analysis-section {
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .suggestion-item {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .suggestion-item:hover {
+      background: var(--btn-secondary-hover);
+      border-color: var(--btn-primary);
+    }
+
+    .action-buttons {
+      padding: 20px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .action-btn {
+      background: var(--btn-primary);
+      color: white;
+      border: none;
+      padding: 12px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background-color 0.2s ease;
+      width: 100%;
+    }
+
+    .action-btn:hover {
+      background: var(--btn-primary-hover);
+    }
+
+    .action-btn.secondary {
+      background: var(--btn-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .action-btn.secondary:hover {
+      background: var(--btn-secondary-hover);
+    }
+
+    /* Main Content Area */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-primary);
+      position: relative;
+    }
+
+    .main-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-primary);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .control-btn {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+    }
+
+    .control-btn:hover {
+      background: var(--btn-secondary-hover);
+    }
+
+    .theme-toggle {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .theme-toggle:hover {
+      background: var(--btn-secondary-hover);
+    }
+
+    /* Chat Area */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 768px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 0 24px;
+    }
+
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 0;
     }
 
     .message {
-      margin: 10px 0;
-      padding: 12px 16px;
-      border-radius: 12px;
-      max-width: 85%;
-      word-wrap: break-word;
+      margin-bottom: 32px;
+      display: flex;
+      flex-direction: column;
     }
 
-    .user-message {
-      background: #4f46e5;
-      color: white;
-      margin-left: auto;
-      text-align: right;
-    }
-
-    .bot-message {
-      background: #f8f9fa;
-      color: #333;
-      border: 1px solid #e9ecef;
-    }
-
-    .bot-message b {
-      color: #1f1f1f;
-      display: block;
+    .message-header {
+      display: flex;
+      align-items: center;
       margin-bottom: 8px;
-      font-size: 13px;
+      gap: 12px;
     }
 
-    .error-message {
-      color: #dc3545;
-      background: #fff5f5;
-      border: 1px solid #fecaca;
+    .message-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
     }
 
-
-    @media (max-width: 640px) {
-      h1 { font-size: 32px; }
-      .sub { font-size: 16px; }
+    .user-avatar {
+      background: var(--message-user-bg);
+      color: white;
     }
 
-    
-    .visualize-btn {
-      background: #10b981;
+    .bot-avatar {
+      background: var(--btn-primary);
+      color: white;
+    }
+
+    .message-content {
+      background: var(--message-bot-bg);
+      padding: 16px 0;
+      border-radius: 8px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    .user-message .message-content {
+      background: var(--message-user-bg);
+      color: white;
+      padding: 16px 20px;
+    }
+
+    /* Dataset Preview Card */
+    .dataset-preview {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 24px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .dataset-preview:hover {
+      border-color: var(--btn-primary);
+      box-shadow: 0 4px 12px var(--shadow-lg);
+    }
+
+    .dataset-preview.expanded {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90vw;
+      height: 90vh;
+      z-index: 1000;
+      overflow: auto;
+      box-shadow: 0 20px 60px var(--shadow-lg);
+    }
+
+    .dataset-preview.hidden {
+      display: none;
+    }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .preview-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .expand-btn {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .preview-table th,
+    .preview-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    .preview-table th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .preview-table td {
+      color: var(--text-secondary);
+    }
+
+    /* Input Area */
+    .input-area {
+      padding: 24px 0;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-primary);
+    }
+
+    .input-container {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .input-field {
+      flex: 1;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 15px;
+      color: var(--text-primary);
+      resize: none;
+      min-height: 48px;
+      max-height: 200px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .input-field:focus {
+      border-color: var(--btn-primary);
+    }
+
+    .send-btn {
+      background: var(--btn-primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background-color 0.2s ease;
+      min-width: 80px;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: var(--btn-primary-hover);
+    }
+
+    .send-btn:disabled {
+      background: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    /* Chart styles */
+    .chart-btn {
+      background: var(--btn-primary);
       color: white;
       border: none;
       padding: 8px 16px;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 12px;
-      margin-top: 10px;
-      transition: background 0.2s;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      margin: 4px;
     }
     
-    .visualize-btn:hover {
-      background: #059669;
+    .chart-btn:hover {
+      background: var(--btn-primary-hover);
     }
     
-    .chart-container {
-      margin-top: 15px;
-      background: white;
+    .chart-btn:disabled {
+      background: var(--text-muted);
+      cursor: not-allowed;
+    }
+    
+    .visualization-controls {
+      margin: 16px 0;
+      padding: 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
-    .chart-wrapper {
-      position: relative;
-      height: 400px;
-      width: 100%;
+    .chart-result {
+      margin-top: 16px;
     }
     
-    .chart-title {
-      font-weight: bold;
-      margin-bottom: 15px;
-      color: #1f1f1f;
-      text-align: center;
+    .chart-image {
+      background: var(--chart-bg);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+    }
+    
+    .chart-image img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      max-height: 400px;
+      object-fit: contain;
+      cursor: pointer;
+    }
+    
+    .chart-explanation {
+      margin-top: 16px;
+      padding: 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+    
+    .chart-explanation h4 {
+      margin: 0 0 12px 0;
+      color: var(--text-primary);
+      font-size: 16px;
+      font-weight: 600;
     }
 
+    /* Modal styles */
+    .chart-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.8);
+      backdrop-filter: blur(4px);
+    }
+    
+    .chart-modal-content {
+      background: var(--chart-bg);
+      margin: 2% auto;
+      padding: 24px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 1200px;
+      height: 90%;
+      position: relative;
+      overflow: auto;
+    }
+    
+    .chart-modal img {
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 200px);
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    
+    .modal-close {
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      color: var(--text-secondary);
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    /* Result table */
+    .result-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+    
+    .result-table th,
+    .result-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+    
+    .result-table th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    
+    .result-table td {
+      color: var(--text-secondary);
+    }
+    
+    .result-table tr:hover td {
+      background: var(--bg-secondary);
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      .sidebar-nav {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        z-index: 1001;
+        width: 280px;
+      }
+      
+      .main-content {
+        margin-left: 0;
+      }
+      
+      .chat-area {
+        padding: 0 16px;
+      }
+    }
+
+    /* Overlay for mobile */
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+    }
+
+    .overlay.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Datanaut.ai</h1>
-    <p class="sub">Preview: <strong>{{ dataset.name }}</strong></p>
-
-    <!-- PREVIEW CARD -->
-    <div class="card" id="previewCard" title="Click to open full dataset">
-      <div class="table-wrap">
-        <table>
+  <!-- App Container -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <div class="sidebar-nav" id="sidebarNav">
+      <div class="sidebar-header">
+        <h1>Datanaut.ai</h1>
+        <div class="dataset-info">
+          <strong>📊 {{ dataset.name }}</strong>
+          <div style="font-size: 12px; margin-top: 4px; color: var(--text-muted);">
+            {{ columns|length }} columns • {{ preview_rows|length }}+ rows
+          </div>
+        </div>
+      </div>
+      
+      <div class="sidebar-content">
+        {% if analysis %}
+        <div class="analysis-section">
+          <div class="section-title">🧠 Dataset Analysis</div>
+          <div class="suggestion-item">
+            <strong>Context:</strong> {{ analysis.context }}
+          </div>
+          <div class="suggestion-item">
+            <strong>Domain:</strong> {{ analysis.domain }}
+          </div>
+        </div>
+        
+        <div class="suggestions-section">
+          <div class="section-title">💡 Suggested Queries</div>
+          {% for query in analysis.suggested_queries %}
+          <div class="suggestion-item" onclick="fillQuery('{{ query|escapejs }}')">
+            {{ query }}
+          </div>
+          {% endfor %}
+        </div>
+        
+        <div class="suggestions-section">
+          <div class="section-title">📈 Priority Visualizations</div>
+          {% for viz in analysis.priority_visualizations %}
+          <div class="suggestion-item">
+            <strong>{{ viz.type|title }}:</strong> {{ viz.description }}
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              {{ viz.reason }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      
+      <div class="action-buttons">
+        <button class="action-btn" onclick="autoVisualize()">
+          🤖 Auto Visualize
+        </button>
+        <button class="action-btn secondary" onclick="toggleDatasetPreview()">
+          📋 View Dataset
+        </button>
+        <button class="action-btn secondary" onclick="uploadNewDataset()">
+          📤 Upload New Dataset
+        </button>
+      </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="main-header">
+        <button class="control-btn" id="sidebarToggle">☰</button>
+        <div class="header-controls">
+          <button class="control-btn" id="datasetToggle">📊 Dataset</button>
+          <button class="theme-toggle" id="themeToggle">🌙</button>
+        </div>
+      </div>
+      
+      <!-- Dataset Preview (collapsible) -->
+      <div class="dataset-preview" id="datasetPreview">
+        <div class="preview-header">
+          <div class="preview-title">{{ dataset.name }} Preview</div>
+          <button class="expand-btn" onclick="expandDataset()">🔍 Expand</button>
+        </div>
+        <table class="preview-table">
           <thead>
             <tr>
-              {% for col in columns %}
-                <th>{{ col }}</th>
+              {% for column in columns %}
+                <th>{{ column }}</th>
               {% endfor %}
             </tr>
           </thead>
@@ -291,507 +723,510 @@
             {% for row in preview_rows %}
               <tr>
                 {% for value in row %}
-                  <td>{{ value }}</td>
+                  <td>{{ value|truncatechars:50 }}</td>
                 {% endfor %}
               </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <div class="fade-mask"></div>
-    </div>
-
-    <div class="hint">Click the canvas to view the top 100 entries.</div>
-  </div>
-
-  <!-- Sidebar (hidden initially) -->
-  <div id="datasetSidebar" class="sidebar">
-    <h2>Full Dataset</h2>
-    <table id="fullDataset"></table>
-  </div>
-  <div id="overlay" class="overlay"></div>
-
-
-   <div class="chat-container" id="chat-container">
-    <!-- messages will appear here -->
-  </div>
-
-  <!-- Input bar -->
-  <div class="chat-input">
-    <input type="text" id="query-input" placeholder="Ask something about the dataset...">
-    <button onclick="sendQuery()">Send</button>
-  </div>
-
-  <!-- Visualization examples -->
-  <div style="padding: 10px; background: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 12px; color: #666; position: fixed; bottom: 60px; left: 0; right: 0;">
-    <b>💡 Try these visualization-friendly queries:</b><br>
-    • "Count employees by department" • "Average salary by job role" • "Show age distribution" • "Total sales by month"
-  </div>
-
-
-<script>
-const previewCard = document.getElementById("previewCard");
-const sidebar = document.getElementById("datasetSidebar");
-const overlay = document.getElementById("overlay");
-const fullDataset = document.getElementById("fullDataset");
-
-previewCard.addEventListener("click", async () => {
-    sidebar.classList.add("active");
-    overlay.classList.add("active");
-    fullDataset.innerHTML = "<tr><td>Loading...</td></tr>";
-
-    try {
-        const response = await fetch("/full_dataset/");
-        const data = await response.json();
-
-        if (data.error) {
-            console.error("Dataset error:", data.error);
-            fullDataset.innerHTML = `<tr><td style='color:red;'>Error: ${data.error}</td></tr>`;
-            return;
-        }
-
-        // Render top 100 rows
-        let html = "<thead><tr>";
-        data.columns.forEach(col => html += `<th>${col}</th>`);
-        html += "</tr></thead><tbody>";
-
-        const rowsToShow = data.rows.slice(0, 100);
-        rowsToShow.forEach(row => {
-            html += "<tr>";
-            data.columns.forEach(col => {
-                html += `<td>${row[col] !== null ? row[col] : ''}</td>`;
-            });
-            html += "</tr>";
-        });
-        html += "</tbody>";
-        fullDataset.innerHTML = html;
-
-        console.log("Dataset loaded (top 100 rows):", data);
-
-    } catch (err) {
-        console.error("Network/parse error:", err);
-        fullDataset.innerHTML = `<tr><td style='color:red;'>Network/parse error: ${err}</td></tr>`;
-    }
-});
-
-overlay.addEventListener("click", () => {
-    sidebar.classList.remove("active");
-    overlay.classList.remove("active");
-});
-
-</script>
-
-<script>
-    const chatContainer = document.getElementById("chat-container");
-    const queryInput = document.getElementById("query-input");
-    let chartInstances = {}; // Keep track of charts for cleanup
-
-    function appendMessage(content, sender="bot") {
-      const msg = document.createElement("div");
-      msg.className = `message ${sender === "user" ? "user-message" : "bot-message"}`;
-      msg.innerHTML = content;
-      chatContainer.appendChild(msg);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function determineChartType(data, columns, query) {
-      const lowerQuery = query.toLowerCase();
       
-      // If query contains aggregation functions, likely needs bar/pie chart
-      if (lowerQuery.includes('count') || lowerQuery.includes('sum') || 
-          lowerQuery.includes('avg') || lowerQuery.includes('average')) {
+      <!-- Chat Area -->
+      <div class="chat-area">
+        <div class="messages-container" id="messagesContainer">
+          <!-- Initial welcome message -->
+          <div class="message">
+            <div class="message-header">
+              <div class="message-avatar bot-avatar">AI</div>
+              <span style="font-weight: 500;">Datanaut Assistant</span>
+            </div>
+            <div class="message-content">
+              👋 Hi! I'm your AI data analyst. I've analyzed your dataset and I'm ready to help you explore <strong>{{ dataset.name }}</strong>.
+              
+              {% if analysis %}
+              <br><br>
+              🎯 <strong>What I found:</strong> {{ analysis.context }}
+              <br><br>
+              💡 Try asking me questions like:
+              <ul style="margin: 8px 0; padding-left: 20px;">
+                <li>"Show me the distribution of {{ columns.0 }}"</li>
+                <li>"What's the correlation between different variables?"</li>
+                <li>"Generate insights about this data"</li>
+              </ul>
+              {% endif %}
+            </div>
+          </div>
+        </div>
         
-        // If grouping by category, use bar chart
-        if (lowerQuery.includes('group by') || columns.length === 2) {
-          return 'bar';
-        }
-        // Single aggregated value, use doughnut
-        if (data.length === 1) {
-          return 'doughnut';
-        }
+        <div class="input-area">
+          <div class="input-container">
+            <textarea 
+              class="input-field" 
+              id="queryInput" 
+              placeholder="Ask me anything about your data..."
+              rows="1"
+            ></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendQuery()">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Chart Modal -->
+  <div id="chartModal" class="chart-modal">
+    <div class="chart-modal-content">
+      <span class="modal-close" id="modalClose">&times;</span>
+      <div id="modalChartContainer"></div>
+    </div>
+  </div>
+  
+  <!-- Overlay for mobile -->
+  <div class="overlay" id="overlay"></div>
+
+<script>
+// Theme toggle functionality
+function toggleTheme() {
+  const body = document.body;
+  const themeToggle = document.getElementById('themeToggle');
+  
+  if (body.getAttribute('data-theme') === 'dark') {
+    body.removeAttribute('data-theme');
+    themeToggle.textContent = '🌙';
+    localStorage.setItem('theme', 'light');
+  } else {
+    body.setAttribute('data-theme', 'dark');
+    themeToggle.textContent = '☀️';
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
+// Initialize theme
+document.addEventListener('DOMContentLoaded', function() {
+  const savedTheme = localStorage.getItem('theme');
+  const themeToggle = document.getElementById('themeToggle');
+  
+  if (savedTheme === 'dark') {
+    document.body.setAttribute('data-theme', 'dark');
+    themeToggle.textContent = '☀️';
+  }
+  
+  // Add event listeners
+  themeToggle.addEventListener('click', toggleTheme);
+  
+  // Chart modal event listeners
+  const modalClose = document.getElementById('modalClose');
+  const chartModal = document.getElementById('chartModal');
+  
+  if (modalClose) {
+    modalClose.addEventListener('click', closeChartModal);
+  }
+  
+  if (chartModal) {
+    chartModal.addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeChartModal();
       }
-      
-      // Time series data
-      if (columns.some(col => col.toLowerCase().includes('date') || 
-                             col.toLowerCase().includes('time') || 
-                             col.toLowerCase().includes('year'))) {
-        return 'line';
-      }
-      
-      // Categorical data with counts
-      if (data.length <= 10 && columns.length === 2) {
-        return 'pie';
-      }
-      
-      // Default to bar chart
-      return 'bar';
-    }
+    });
+  }
 
-    function createChart(chartId, data, columns, chartType, query) {
-      console.log('Creating chart:', chartId, chartType, data, columns);
-      
-      // Check if Chart.js is loaded
-      if (typeof Chart === 'undefined') {
-        console.error('Chart.js is not loaded!');
-        const errorDiv = document.createElement('div');
-        errorDiv.innerHTML = '<div style="color: red; padding: 10px;">⚠️ Chart.js library failed to load. Please refresh the page.</div>';
-        document.getElementById(chartId).parentNode.appendChild(errorDiv);
-        return;
-      }
-      
-      const ctx = document.getElementById(chartId).getContext('2d');
-      
-      let chartData, chartOptions;
-      
-      switch (chartType) {
-        case 'bar':
-          chartData = createBarChartData(data, columns);
-          chartOptions = createBarChartOptions();
-          break;
-        case 'line':
-          chartData = createLineChartData(data, columns);
-          chartOptions = createLineChartOptions();
-          break;
-        case 'pie':
-        case 'doughnut':
-          chartData = createPieChartData(data, columns);
-          chartOptions = createPieChartOptions();
-          break;
-        default:
-          chartData = createBarChartData(data, columns);
-          chartOptions = createBarChartOptions();
-      }
-      
-      console.log('Chart data:', chartData);
-      console.log('Chart options:', chartOptions);
-      
-      // Destroy existing chart if it exists
-      if (chartInstances[chartId]) {
-        chartInstances[chartId].destroy();
-      }
-      
-      try {
-        chartInstances[chartId] = new Chart(ctx, {
-          type: chartType,
-          data: chartData,
-          options: chartOptions
-        });
-        console.log('Chart created successfully');
-      } catch (error) {
-        console.error('Error creating chart:', error);
-      }
+  // Sidebar toggle
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const sidebarNav = document.getElementById('sidebarNav');
+  const overlay = document.getElementById('overlay');
+  
+  sidebarToggle.addEventListener('click', function() {
+    sidebarNav.classList.toggle('collapsed');
+    overlay.classList.toggle('active');
+  });
+  
+  overlay.addEventListener('click', function() {
+    sidebarNav.classList.add('collapsed');
+    overlay.classList.remove('active');
+  });
+  
+  // Dataset toggle
+  const datasetToggle = document.getElementById('datasetToggle');
+  datasetToggle.addEventListener('click', toggleDatasetPreview);
+  
+  // Auto-resize textarea
+  const queryInput = document.getElementById('queryInput');
+  queryInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = this.scrollHeight + 'px';
+  });
+  
+  // Enter key to send
+  queryInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendQuery();
     }
+  });
+});
 
-    function createBarChartData(data, columns) {
-      const labels = data.map(row => String(row[columns[0]] || ''));
-      const values = data.map(row => Number(row[columns[1]] || 0));
-      
-      return {
-        labels: labels,
-        datasets: [{
-          label: columns[1] || 'Value',
-          data: values,
-          backgroundColor: 'rgba(79, 70, 229, 0.8)',
-          borderColor: 'rgba(79, 70, 229, 1)',
-          borderWidth: 1
-        }]
-      };
+// UI Functions
+function toggleDatasetPreview() {
+  const preview = document.getElementById('datasetPreview');
+  const toggle = document.getElementById('datasetToggle');
+  
+  if (preview.classList.contains('hidden')) {
+    preview.classList.remove('hidden');
+    toggle.textContent = '📊 Hide Dataset';
+  } else {
+    preview.classList.add('hidden');
+    toggle.textContent = '📊 Show Dataset';
+  }
+}
+
+function expandDataset() {
+  const preview = document.getElementById('datasetPreview');
+  preview.classList.toggle('expanded');
+}
+
+function fillQuery(query) {
+  const input = document.getElementById('queryInput');
+  input.value = query;
+  input.focus();
+}
+
+function uploadNewDataset() {
+  window.location.href = '/';
+}
+
+// Auto visualize function
+function autoVisualize() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '🔄 Generating...';
+  
+  fetch('/auto_visualize/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': '{{ csrf_token }}'
     }
-
-    function createLineChartData(data, columns) {
-      const labels = data.map(row => String(row[columns[0]] || ''));
-      const values = data.map(row => Number(row[columns[1]] || 0));
-      
-      return {
-        labels: labels,
-        datasets: [{
-          label: columns[1] || 'Value',
-          data: values,
-          borderColor: 'rgba(79, 70, 229, 1)',
-          backgroundColor: 'rgba(79, 70, 229, 0.1)',
-          tension: 0.4,
-          fill: true
-        }]
-      };
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      // Add auto-generated charts to chat
+      displayAutoVisualization(data);
+    } else {
+      appendMessage('❌ Auto-visualization failed: ' + data.error, 'bot');
     }
+  })
+  .catch(error => {
+    console.error('Auto-visualization error:', error);
+    appendMessage('❌ Failed to generate auto-visualizations', 'bot');
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.textContent = '🤖 Auto Visualize';
+  });
+}
 
-    function createPieChartData(data, columns) {
-      const labels = data.map(row => String(row[columns[0]] || ''));
-      const values = data.map(row => Number(row[columns[1]] || 0));
-      
-      const colors = [
-        '#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-        '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1'
-      ];
-      
-      return {
-        labels: labels,
-        datasets: [{
-          data: values,
-          backgroundColor: colors.slice(0, values.length),
-          borderWidth: 2,
-          borderColor: '#fff'
-        }]
-      };
-    }
-
-    function createBarChartOptions() {
-      return {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: {
-              color: 'rgba(0,0,0,0.1)'
-            }
-          },
-          x: {
-            grid: {
-              display: false
-            }
-          }
-        }
-      };
-    }
-
-    function createLineChartOptions() {
-      return {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: {
-              color: 'rgba(0,0,0,0.1)'
-            }
-          },
-          x: {
-            grid: {
-              display: false
-            }
-          }
-        }
-      };
-    }
-
-    function createPieChartOptions() {
-      return {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              padding: 20,
-              usePointStyle: true
-            }
-          }
-        }
-      };
-    }
-
-    function canVisualize(data) {
-      console.log('Checking if data can be visualized:', data);
-      
-      if (!data || data.length === 0) {
-        console.log('No data available');
-        return false;
-      }
-      
-      const columns = Object.keys(data[0]);
-      console.log('Columns found:', columns);
-      
-      // Must have at least 1 column and some data
-      if (columns.length === 0) {
-        console.log('No columns found');
-        return false;
-      }
-      
-      // Check if there's at least one numeric column
-      const hasNumericData = data.some(row => 
-        Object.values(row).some(val => 
-          !isNaN(val) && val !== null && val !== ''
-        )
-      );
-      
-      console.log('Has numeric data:', hasNumericData);
-      return hasNumericData;
-    }
-
-    function visualizeData(button, data, query) {
-      console.log('Visualizing data:', data, 'Query:', query);
-      
-      // Disable button to prevent multiple charts
-      button.disabled = true;
-      button.textContent = "📊 Generating...";
-      
-      // Find the message element
-      const messageElement = button.closest('.message');
-      
-      // Generate visualization
-      setTimeout(() => {
-        try {
-          generateVisualization(data, query, messageElement);
-          button.style.display = 'none'; // Hide button after chart is created
-        } catch (error) {
-          console.error('Error generating visualization:', error);
-          button.textContent = "❌ Error";
-          button.disabled = false;
-        }
-      }, 500);
-    }
-
-    function generateVisualization(data, query, messageElement) {
-      console.log('generateVisualization called with:', data, query);
-      
-      // Create unique ID for this chart
-      const chartId = 'chart_' + Date.now();
-      
-      // Create chart container
-      const chartContainer = document.createElement('div');
-      chartContainer.className = 'chart-container';
-      chartContainer.innerHTML = `
-        <div class="chart-title">📊 Data Visualization</div>
-        <div class="chart-wrapper">
-          <canvas id="${chartId}"></canvas>
+function displayAutoVisualization(data) {
+  let content = '<div><h3>🤖 Auto-Generated Insights</h3><br>';
+  
+  content += `<p><strong>Analysis:</strong> ${data.analysis.context}</p><br>`;
+  
+  if (data.charts && data.charts.length > 0) {
+    content += '<div class="visualization-controls">';
+    content += '<div style="font-weight: 600; margin-bottom: 15px;">📊 Key Visualizations</div>';
+    
+    data.charts.forEach((chart, index) => {
+      content += `
+        <div class="chart-result" style="margin-bottom: 24px;">
+          <div class="chart-image">
+            <img src="${chart.image}" alt="${chart.type} chart" onclick="openChartModal('${chart.image}', '${chart.type}')">
+          </div>
+          <div class="chart-explanation">
+            <h4>${chart.description}</h4>
+            <p>${chart.explanation}</p>
+            <p><em>Why this matters:</em> ${chart.reason}</p>
+          </div>
         </div>
       `;
+    });
+    
+    content += '</div>';
+  }
+  
+  content += '</div>';
+  appendMessage(content, 'bot');
+}
+
+// Chart modal functions
+function openChartModal(imageSrc, chartType) {
+  const modal = document.getElementById('chartModal');
+  const modalContainer = document.getElementById('modalChartContainer');
+  
+  modalContainer.innerHTML = `
+    <h3 style="margin-top: 0; color: var(--text-primary);">📊 ${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart - Full View</h3>
+    <img src="${imageSrc}" alt="${chartType} chart">
+  `;
+  
+  modal.style.display = 'block';
+}
+
+function closeChartModal() {
+  document.getElementById('chartModal').style.display = 'none';
+}
+
+// Chat functions
+function appendMessage(content, sender = "bot") {
+  const container = document.getElementById("messagesContainer");
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "message";
+  
+  if (sender === "user") {
+    messageDiv.className += " user-message";
+    messageDiv.innerHTML = `
+      <div class="message-header">
+        <div class="message-avatar user-avatar">You</div>
+        <span style="font-weight: 500;">You</span>
+      </div>
+      <div class="message-content">${content}</div>
+    `;
+  } else {
+    messageDiv.innerHTML = `
+      <div class="message-header">
+        <div class="message-avatar bot-avatar">AI</div>
+        <span style="font-weight: 500;">Datanaut Assistant</span>
+      </div>
+      <div class="message-content">${content}</div>
+    `;
+  }
+  
+  container.appendChild(messageDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendQuery() {
+  const input = document.getElementById("queryInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const query = input.value.trim();
+  
+  if (!query) return;
+
+  // Show user message
+  appendMessage(query, "user");
+  input.value = "";
+  input.style.height = 'auto';
+  
+  // Disable send button
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending...";
+
+  try {
+    const response = await fetch(`/run_query/{{ dataset.name }}/`, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": "{{ csrf_token }}",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ query })
+    });
+
+    const data = await response.json();
+    
+    // Format bot reply
+    let reply = `<div style="margin-bottom: 12px;"><strong>SQL Query:</strong> <code style="background: var(--bg-tertiary); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px;">${data.query}</code></div>`;
+    
+    if (data.error) {
+      reply += `<div style="color: var(--error-text); background: var(--error-bg); border: 1px solid var(--error-border); padding: 16px; border-radius: 8px; margin-top: 12px;">
+        <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Error</div>
+        <div>${data.error}</div>
+      </div>`;
+    } else if (Array.isArray(data.result) && data.result.length > 0) {
+      reply += "<table class='result-table'><thead><tr>";
+      Object.keys(data.result[0]).forEach(col => reply += `<th>${col}</th>`);
+      reply += "</tr></thead><tbody>";
+      data.result.forEach(row => {
+        reply += "<tr>";
+        Object.values(row).forEach(val => reply += `<td>${val ?? ""}</td>`);
+        reply += "</tr>";
+      });
+      reply += "</tbody></table>";
+      reply += `<div style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">📊 ${data.result.length} row(s) returned</div>`;
       
-      messageElement.appendChild(chartContainer);
-      
-      // Analyze data and create appropriate chart
-      const columns = Object.keys(data[0]);
-      const chartType = determineChartType(data, columns, query);
-      
-      console.log('Chart type determined:', chartType, 'Columns:', columns);
-      
-      createChart(chartId, data, columns, chartType, query);
-    }
-
-    function appendMessage(content, sender="bot") {
-      const msg = document.createElement("div");
-      msg.className = `message ${sender === "user" ? "user-message" : "bot-message"}`;
-      msg.innerHTML = content;
-      chatContainer.appendChild(msg);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    async function sendQuery() {
-      const query = queryInput.value.trim();
-      if (!query) return;
-
-      // Show user message
-      appendMessage(query, "user");
-      queryInput.value = "";
-
-      try {
-        const response = await fetch(`/run_query/{{ dataset.name }}/`, {
-          method: "POST",
-          headers: {
-            "X-CSRFToken": "{{ csrf_token }}",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ query })
-        });
-
-        const data = await response.json();
-
-        // Create message element first
-        const messageElement = document.createElement("div");
-        messageElement.className = "message bot-message";
-
-        // Format bot reply
-        let reply = `<b>SQL Query:</b> <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${data.query}</code><br><br>`;
-        
-        if (data.error) {
-          reply += `<div class="error-message" style="color: #dc3545; background: #fff5f5; border: 1px solid #fecaca; padding: 15px; border-radius: 8px; margin-top: 8px; line-height: 1.5;">
-            <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Error</div>
-            <div>${data.error}</div>
-          </div>`;
-        } else if (Array.isArray(data.result) && data.result.length > 0) {
-          reply += "<table class='result-table'><thead><tr>";
-          Object.keys(data.result[0]).forEach(col => reply += `<th>${col}</th>`);
-          reply += "</tr></thead><tbody>";
-          data.result.forEach(row => {
-            reply += "<tr>";
-            Object.values(row).forEach(val => reply += `<td>${val ?? ""}</td>`);
-            reply += "</tr>";
-          });
-          reply += "</tbody></table>";
-          reply += `<div style="margin-top: 8px; font-size: 12px; color: #666;">📊 ${data.result.length} row(s) returned</div>`;
-          
-          // Add visualization button if data is suitable for charts
-          console.log('Checking if data can be visualized for result:', data.result);
-          if (canVisualize(data.result)) {
-            console.log('Adding visualization button');
-            const buttonId = 'viz-btn-' + Date.now();
-            reply += `<button class="visualize-btn" id="${buttonId}">📊 Visualize Data</button>`;
-            
-            // Store data for later use
-            setTimeout(() => {
-              const button = document.getElementById(buttonId);
-              if (button) {
-                console.log('Setting up button click listener');
-                button.addEventListener('click', () => {
-                  visualizeData(button, data.result, data.query);
-                });
-              } else {
-                console.error('Button not found:', buttonId);
-              }
-            }, 100);
-          } else {
-            console.log('Data cannot be visualized');
-          }
-        } else {
-          reply += `<div style="color: #666; font-style: italic; padding: 10px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">📭 No results found.</div>`;
-        }
-
-        messageElement.innerHTML = reply;
-        chatContainer.appendChild(messageElement);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-
-      } catch (error) {
-        const errorMsg = `
-          <div class="error-message" style="color: #dc3545; background: #fff5f5; border: 1px solid #fecaca; padding: 15px; border-radius: 8px; margin-top: 8px; line-height: 1.5;">
-            <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Connection Error</div>
-            <div>Unable to process your query. Please check your connection and try again.</div>
-            <div style="margin-top: 10px;">
-              <a href="/" style="background: #4f46e5; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block;">← Go to Home</a>
+      // Add visualization buttons if data is suitable for charts
+      if (canVisualize(data.result)) {
+        const buttonContainerId = 'viz-container-' + Date.now();
+        reply += `
+          <div class="visualization-controls" id="${buttonContainerId}">
+            <div style="font-weight: 600; margin-bottom: 15px; color: var(--text-primary); font-size: 16px;">📊 Visualization Options</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+              <button class="chart-btn" data-type="bar">📊 Bar Chart</button>
+              <button class="chart-btn" data-type="line">📈 Line Chart</button>
+              <button class="chart-btn" data-type="scatter">🔵 Scatter Plot</button>
+              <button class="chart-btn" data-type="box">📦 Box Plot</button>
+              <button class="chart-btn" data-type="heatmap">🌡️ Heatmap</button>
+            </div>
+            <div class="chart-result" style="display: none;">
+              <div class="chart-image"></div>
+              <div class="chart-explanation"></div>
             </div>
           </div>
         `;
-        appendMessage(errorMsg, "bot");
-        console.error(error);
+        
+        // Add chart generation listeners
+        setTimeout(() => {
+          const container = document.getElementById(buttonContainerId);
+          if (container) {
+            const buttons = container.querySelectorAll('.chart-btn');
+            buttons.forEach(button => {
+              button.addEventListener('click', () => {
+                generateSeabornChart(button, data.result, data.columns || Object.keys(data.result[0]), button.dataset.type, container);
+              });
+            });
+          }
+        }, 100);
       }
+    } else {
+      reply += `<div style="color: var(--text-muted); font-style: italic; padding: 16px; background: var(--bg-secondary); border-radius: 8px; margin-top: 12px;">📭 No results found.</div>`;
     }
 
-    // Enter key to send
-    queryInput.addEventListener("keypress", function(e) {
-      if (e.key === "Enter") sendQuery();
-    });
+    appendMessage(reply, "bot");
 
-    // Test if Chart.js is loaded
-    document.addEventListener('DOMContentLoaded', function() {
-      if (typeof Chart !== 'undefined') {
-        console.log('✅ Chart.js loaded successfully, version:', Chart.version);
+  } catch (error) {
+    const errorMsg = `
+      <div style="color: var(--error-text); background: var(--error-bg); border: 1px solid var(--error-border); padding: 16px; border-radius: 8px; margin-top: 12px;">
+        <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Connection Error</div>
+        <div>Unable to process your query. Please check your connection and try again.</div>
+      </div>
+    `;
+    appendMessage(errorMsg, "bot");
+    console.error(error);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send";
+  }
+}
+
+// Chart generation functions
+function canVisualize(data) {
+  if (!data || data.length === 0) return false;
+  
+  const columns = Object.keys(data[0]);
+  if (columns.length === 0) return false;
+  
+  // Check if there's at least one numeric column
+  const hasNumericData = data.some(row => 
+    Object.values(row).some(val => 
+      !isNaN(val) && val !== null && val !== ''
+    )
+  );
+  
+  return hasNumericData;
+}
+
+function generateSeabornChart(button, data, columns, chartType, container) {
+  // Disable all buttons
+  const buttons = container.querySelectorAll('.chart-btn');
+  buttons.forEach(btn => {
+    btn.disabled = true;
+    if (btn === button) {
+      btn.textContent = btn.textContent.split(' ')[0] + ' Generating...';
+    }
+  });
+  
+  // Show loading state
+  const resultDiv = container.querySelector('.chart-result');
+  const imageDiv = container.querySelector('.chart-image');
+  const explanationDiv = container.querySelector('.chart-explanation');
+  
+  resultDiv.style.display = 'block';
+  imageDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">🔄 Generating chart...</div>';
+  explanationDiv.innerHTML = '';
+  
+  // Send request to backend
+  fetch('/generate_chart/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': '{{ csrf_token }}'
+    },
+    body: JSON.stringify({
+      chart_type: chartType,
+      query_results: data,
+      columns: columns
+    })
+  })
+  .then(response => response.json())
+  .then(result => {
+    if (result.success) {
+      // Display the chart image with zoom controls
+      imageDiv.innerHTML = `
+        <div style="position: relative;">
+          <img src="${result.chart_image}" alt="${chartType} chart" onclick="openChartModal('${result.chart_image}', '${chartType}')">
+        </div>
+      `;
+      
+      // Display the AI explanation with better formatting
+      const formattedExplanation = formatExplanation(result.explanation);
+      explanationDiv.innerHTML = `
+        <h4>📊 Chart Analysis</h4>
+        ${formattedExplanation}
+      `;
+      
+      // Re-enable buttons with original text
+      buttons.forEach(btn => {
+        btn.disabled = false;
+        const icon = btn.textContent.split(' ')[0];
+        const text = btn.textContent.split(' ').slice(1).join(' ').replace(' Generating...', '');
+        btn.textContent = icon + ' ' + text;
+      });
+      
+    } else {
+      imageDiv.innerHTML = `<div style="color: var(--error-text); text-align: center; padding: 20px; background: var(--error-bg); border: 1px solid var(--error-border); border-radius: 8px;">❌ ${result.error}</div>`;
+      explanationDiv.innerHTML = '';
+      
+      // Re-enable buttons
+      buttons.forEach(btn => {
+        btn.disabled = false;
+        const icon = btn.textContent.split(' ')[0];
+        const text = btn.textContent.split(' ').slice(1).join(' ').replace(' Generating...', '');
+        btn.textContent = icon + ' ' + text;
+      });
+    }
+  })
+  .catch(error => {
+    console.error('Chart generation error:', error);
+    imageDiv.innerHTML = '<div style="color: var(--error-text); text-align: center; padding: 20px; background: var(--error-bg); border: 1px solid var(--error-border); border-radius: 8px;">❌ Failed to generate chart</div>';
+    explanationDiv.innerHTML = '';
+    
+    // Re-enable buttons
+    buttons.forEach(btn => {
+      btn.disabled = false;
+      const icon = btn.textContent.split(' ')[0];
+      const text = btn.textContent.split(' ').slice(1).join(' ').replace(' Generating...', '');
+      btn.textContent = icon + ' ' + text;
+    });
+  });
+}
+
+// Format explanation text for better readability
+function formatExplanation(text) {
+  const paragraphs = text.split('\n\n');
+  let formatted = '';
+  
+  paragraphs.forEach(paragraph => {
+    if (paragraph.trim()) {
+      if (paragraph.match(/^\d+\./)) {
+        formatted += `<p><strong>${paragraph}</strong></p>`;
+      } else if (paragraph.includes('Key insights:') || paragraph.includes('Notable patterns:')) {
+        formatted += `<p><strong>${paragraph}</strong></p>`;
       } else {
-        console.error('❌ Chart.js failed to load');
+        formatted += `<p>${paragraph}</p>`;
       }
-    });
-  </script>
-
-
+    }
+  });
+  
+  return formatted || `<p>${text.replace(/\n/g, '<br>')}</p>`;
+}
+</script>
 
 </body>
 </html>
