@@ -87,7 +87,11 @@
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      position: relative;
+      position: fixed;
+      left: 0;
+      top: 0;
+      height: 100vh;
+      z-index: 1000;
       transition: transform 0.3s ease;
     }
 
@@ -120,6 +124,179 @@
       flex: 1;
       padding: 20px;
       overflow-y: auto;
+    }
+
+    /* Sidebar Tabs */
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px 8px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+      color: var(--btn-primary);
+      border-bottom-color: var(--btn-primary);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Column Schema Styling */
+    .column-chip {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+
+    .column-chip:hover {
+      background: var(--btn-secondary-hover);
+      border-color: var(--btn-primary);
+    }
+
+    .column-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .column-name {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .column-type {
+      background: var(--bg-tertiary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .column-stats {
+      display: flex;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .missing-indicator {
+      color: var(--error-text);
+    }
+
+    .sample-values {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Query Chips */
+    .query-chip {
+      background: var(--btn-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .query-chip:hover {
+      background: var(--btn-primary);
+      color: white;
+    }
+
+    /* Health Metrics */
+    .health-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .health-metric {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .metric-label {
+      color: var(--text-secondary);
+    }
+
+    .metric-value {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .metric-value.warning {
+      color: var(--error-text);
+    }
+
+    .metric-value.caution {
+      color: #f59e0b;
+    }
+
+    .health-alert {
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    .health-alert.warning {
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+    }
+
+    .health-alert.info {
+      background: #dbeafe;
+      border: 1px solid #3b82f6;
+      color: #1e40af;
+    }
+
+    [data-theme="dark"] .health-alert.info {
+      background: #1e3a8a;
+      color: #93c5fd;
+    }
+
+    .insight-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     .suggestions-section, .analysis-section {
@@ -195,6 +372,12 @@
       flex-direction: column;
       background: var(--bg-primary);
       position: relative;
+      margin-left: 260px;
+      transition: margin-left 0.3s ease;
+    }
+
+    .main-content.sidebar-collapsed {
+      margin-left: 0;
     }
 
     .main-header {
@@ -395,9 +578,12 @@
 
     /* Input Area */
     .input-area {
-      padding: 24px 0;
+      padding: 24px;
       border-top: 1px solid var(--border-color);
       background: var(--bg-primary);
+      position: sticky;
+      bottom: 0;
+      z-index: 100;
     }
 
     .input-container {
@@ -648,36 +834,127 @@
       </div>
       
       <div class="sidebar-content">
+        <!-- Tab Navigation -->
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="schema">Schema</button>
+          <button class="tab-btn" data-tab="queries">Queries</button>
+          <button class="tab-btn" data-tab="health">Health</button>
+        </div>
+
+        <!-- Schema Tab -->
+        <div class="tab-content active" id="schema-tab">
+          <div class="section-title">📋 Column Schema</div>
+          {% if data_profile %}
+            {% for col in data_profile.columns %}
+            <div class="column-chip" data-query="SELECT &quot;{{ col.name }}&quot;, COUNT(*) as count FROM &quot;{{ dataset.name }}&quot; GROUP BY &quot;{{ col.name }}&quot; ORDER BY count DESC LIMIT 10">
+              <div class="column-header">
+                <span class="column-name">{{ col.name }}</span>
+                <span class="column-type">{{ col.dtype }}</span>
+              </div>
+              <div class="column-stats">
+                {% if col.missing_percentage > 0 %}
+                  <span class="missing-indicator">{{ col.missing_percentage|floatformat:1 }}% missing</span>
+                {% endif %}
+                <span class="unique-count">{{ col.unique_count }} unique</span>
+              </div>
+              {% if col.sample_values %}
+              <div class="sample-values">
+                Sample: {{ col.sample_values|slice:":3"|join:", " }}
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+
+        <!-- Queries Tab -->
+        <div class="tab-content" id="queries-tab">
+          <div class="section-title">💡 Quick Actions</div>
+          
+          <div class="query-chip" data-query="SELECT COUNT(*) as total_rows FROM &quot;{{ dataset.name }}&quot;">
+            📊 Row Count
+          </div>
+          
+          {% if data_profile.columns %}
+            {% for col in data_profile.columns %}
+              {% if col.dtype == 'object' and col.is_categorical %}
+              <div class="query-chip" data-query="SELECT &quot;{{ col.name }}&quot;, COUNT(*) as count FROM &quot;{{ dataset.name }}&quot; GROUP BY &quot;{{ col.name }}&quot; ORDER BY count DESC LIMIT 10">
+                📈 Top {{ col.name }}
+              </div>
+              {% elif col.dtype in 'int64,float64' %}
+              <div class="query-chip" data-query="SELECT AVG(&quot;{{ col.name }}&quot;) as avg_{{ col.name }}, MIN(&quot;{{ col.name }}&quot;) as min_{{ col.name }}, MAX(&quot;{{ col.name }}&quot;) as max_{{ col.name }} FROM &quot;{{ dataset.name }}&quot;">
+                📊 {{ col.name }} Stats  
+              </div>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+          
+          <div class="query-chip" data-query="SELECT * FROM &quot;{{ dataset.name }}&quot; WHERE ">
+            🔍 Custom Filter
+          </div>
+          
+          {% if data_profile.data_health.duplicate_rows > 0 %}
+          <div class="query-chip" data-query="SELECT *, COUNT(*) as duplicate_count FROM &quot;{{ dataset.name }}&quot; GROUP BY {{ columns|join:', ' }} HAVING COUNT(*) > 1">
+            🔄 Find Duplicates
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Health Tab -->
+        <div class="tab-content" id="health-tab">
+          <div class="section-title">🏥 Data Health</div>
+          
+          {% if data_profile %}
+          <div class="health-card">
+            <div class="health-metric">
+              <span class="metric-label">Total Rows</span>
+              <span class="metric-value">{{ data_profile.shape.0|floatformat:0 }}</span>
+            </div>
+            <div class="health-metric">
+              <span class="metric-label">Total Columns</span>
+              <span class="metric-value">{{ data_profile.shape.1 }}</span>
+            </div>
+            <div class="health-metric">
+              <span class="metric-label">Missing Data</span>
+              <span class="metric-value {% if data_profile.data_health.missing_percentage > 10 %}warning{% elif data_profile.data_health.missing_percentage > 5 %}caution{% endif %}">
+                {{ data_profile.data_health.missing_percentage|floatformat:1 }}%
+              </span>
+            </div>
+            {% if data_profile.data_health.duplicate_rows > 0 %}
+            <div class="health-metric">
+              <span class="metric-label">Duplicate Rows</span>
+              <span class="metric-value warning">{{ data_profile.data_health.duplicate_rows }}</span>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if data_profile.data_health.constant_columns %}
+          <div class="health-alert warning">
+            <strong>⚠️ Constant Columns</strong>
+            <div>{{ data_profile.data_health.constant_columns|join:", " }}</div>
+            <small>These columns have only one unique value</small>
+          </div>
+          {% endif %}
+
+          {% if data_profile.data_health.high_cardinality_columns %}
+          <div class="health-alert info">
+            <strong>ℹ️ High Cardinality</strong>
+            <div>{{ data_profile.data_health.high_cardinality_columns|join:", " }}</div>
+            <small>These might be ID columns</small>
+          </div>
+          {% endif %}
+          {% endif %}
+        </div>
+
         {% if analysis %}
-        <div class="analysis-section">
-          <div class="section-title">🧠 Dataset Analysis</div>
-          <div class="suggestion-item">
+        <div class="suggestions-section">
+          <div class="section-title">🎯 AI Insights</div>
+          <div class="insight-card">
+            <strong>Domain:</strong> {{ analysis.domain|title }}
+          </div>
+          <div class="insight-card">
             <strong>Context:</strong> {{ analysis.context }}
           </div>
-          <div class="suggestion-item">
-            <strong>Domain:</strong> {{ analysis.domain }}
-          </div>
-        </div>
-        
-        <div class="suggestions-section">
-          <div class="section-title">💡 Suggested Queries</div>
-          {% for query in analysis.suggested_queries %}
-          <div class="suggestion-item" onclick="fillQuery('{{ query|escapejs }}')">
-            {{ query }}
-          </div>
-          {% endfor %}
-        </div>
-        
-        <div class="suggestions-section">
-          <div class="section-title">📈 Priority Visualizations</div>
-          {% for viz in analysis.priority_visualizations %}
-          <div class="suggestion-item">
-            <strong>{{ viz.type|title }}:</strong> {{ viz.description }}
-            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-              {{ viz.reason }}
-            </div>
-          </div>
-          {% endfor %}
         </div>
         {% endif %}
       </div>
@@ -701,7 +978,7 @@
         <button class="control-btn" id="sidebarToggle">☰</button>
         <div class="header-controls">
           <button class="control-btn" id="datasetToggle">📊 Dataset</button>
-          <button class="theme-toggle" id="themeToggle">🌙</button>
+          <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
         </div>
       </div>
       
@@ -741,17 +1018,47 @@
               <span style="font-weight: 500;">Datanaut Assistant</span>
             </div>
             <div class="message-content">
-              👋 Hi! I'm your AI data analyst. I've analyzed your dataset and I'm ready to help you explore <strong>{{ dataset.name }}</strong>.
+              👋 Hi! I've analyzed <strong>{{ dataset.name }}</strong> and I'm ready to help you explore your data.
               
               {% if analysis %}
               <br><br>
-              🎯 <strong>What I found:</strong> {{ analysis.context }}
+              🎯 <strong>Dataset Context:</strong> {{ analysis.context }}
+              <br>
+              📊 <strong>Domain:</strong> {{ analysis.domain|title }}
+              
+              {% if data_profile %}
               <br><br>
-              💡 Try asking me questions like:
+              <strong>� Data Health Summary:</strong>
               <ul style="margin: 8px 0; padding-left: 20px;">
-                <li>"Show me the distribution of {{ columns.0 }}"</li>
-                <li>"What's the correlation between different variables?"</li>
-                <li>"Generate insights about this data"</li>
+                <li><strong>{{ data_profile.shape.0|floatformat:0 }}</strong> rows, <strong>{{ data_profile.shape.1 }}</strong> columns</li>
+                {% if data_profile.data_health.missing_percentage > 0 %}
+                <li>{{ data_profile.data_health.missing_percentage|floatformat:1 }}% missing data overall</li>
+                {% endif %}
+                {% if data_profile.data_health.duplicate_rows > 0 %}
+                <li>{{ data_profile.data_health.duplicate_rows }} duplicate rows found</li>
+                {% endif %}
+                {% if data_profile.data_health.constant_columns %}
+                <li>{{ data_profile.data_health.constant_columns|length }} constant column(s) detected</li>
+                {% endif %}
+              </ul>
+              {% endif %}
+              
+              <br>
+              💡 <strong>Quick Start:</strong> Try the schema-aware query chips in the sidebar, or ask me:
+              <ul style="margin: 8px 0; padding-left: 20px;">
+                {% for col in columns|slice:":3" %}
+                <li>"Show me the distribution of {{ col }}"</li>
+                {% endfor %}
+                <li>"Find correlations in my data"</li>
+                <li>"What are the key patterns here?"</li>
+              </ul>
+              {% else %}
+              <br><br>
+              💡 You can ask me questions like:
+              <ul style="margin: 8px 0; padding-left: 20px;">
+                <li>"Show me all data"</li>
+                <li>"What columns do I have?"</li>
+                <li>"Find patterns in this dataset"</li>
               </ul>
               {% endif %}
             </div>
@@ -814,6 +1121,35 @@ document.addEventListener('DOMContentLoaded', function() {
   // Add event listeners
   themeToggle.addEventListener('click', toggleTheme);
   
+  // Tab functionality
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', function() {
+      const tabName = this.dataset.tab;
+      
+      // Remove active class from all tabs and contents
+      tabBtns.forEach(tb => tb.classList.remove('active'));
+      tabContents.forEach(tc => tc.classList.remove('active'));
+      
+      // Add active class to clicked tab and corresponding content
+      this.classList.add('active');
+      document.getElementById(tabName + '-tab').classList.add('active');
+    });
+  });
+  
+  // Query chip functionality
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.query-chip') || e.target.closest('.column-chip')) {
+      const chip = e.target.closest('.query-chip') || e.target.closest('.column-chip');
+      const query = chip.dataset.query;
+      if (query) {
+        fillQuery(query.replace(/&quot;/g, '"'));
+      }
+    }
+  });
+  
   // Chart modal event listeners
   const modalClose = document.getElementById('modalClose');
   const chartModal = document.getElementById('chartModal');
@@ -833,15 +1169,18 @@ document.addEventListener('DOMContentLoaded', function() {
   // Sidebar toggle
   const sidebarToggle = document.getElementById('sidebarToggle');
   const sidebarNav = document.getElementById('sidebarNav');
+  const mainContent = document.querySelector('.main-content');
   const overlay = document.getElementById('overlay');
   
   sidebarToggle.addEventListener('click', function() {
     sidebarNav.classList.toggle('collapsed');
+    mainContent.classList.toggle('sidebar-collapsed');
     overlay.classList.toggle('active');
   });
   
   overlay.addEventListener('click', function() {
     sidebarNav.classList.add('collapsed');
+    mainContent.classList.add('sidebar-collapsed');
     overlay.classList.remove('active');
   });
   
@@ -1032,12 +1371,26 @@ async function sendQuery() {
     const data = await response.json();
     
     // Format bot reply
-    let reply = `<div style="margin-bottom: 12px;"><strong>SQL Query:</strong> <code style="background: var(--bg-tertiary); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px;">${data.query}</code></div>`;
+    let reply = `<div style="margin-bottom: 12px;"><strong>SQL Query:</strong> <code style="background: var(--bg-tertiary); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px;">${data.query}</code>`;
+    
+    if (data.auto_limit_added) {
+      reply += ` <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500;">LIMIT 1000 (auto)</span>`;
+    }
+    
+    reply += `</div>`;
     
     if (data.error) {
       reply += `<div style="color: var(--error-text); background: var(--error-bg); border: 1px solid var(--error-border); padding: 16px; border-radius: 8px; margin-top: 12px;">
-        <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Error</div>
+        <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Query Error</div>
         <div>${data.error}</div>
+        <div style="margin-top: 12px; font-size: 13px;">
+          <strong>💡 Tips:</strong>
+          <ul style="margin: 4px 0 0 20px;">
+            <li>Check column names in the Schema tab</li>
+            <li>Use double quotes around column names with spaces</li>
+            <li>Ensure proper SQL syntax</li>
+          </ul>
+        </div>
       </div>`;
     } else if (Array.isArray(data.result) && data.result.length > 0) {
       reply += "<table class='result-table'><thead><tr>";

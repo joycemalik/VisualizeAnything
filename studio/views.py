@@ -105,6 +105,78 @@ def upload_dataset(request):
     return redirect("index")
 
 
+def generate_data_profile(df):
+    """Generate comprehensive data profile for health checks"""
+    profile = {
+        'shape': df.shape,
+        'columns': [],
+        'data_health': {
+            'duplicate_rows': df.duplicated().sum(),
+            'total_missing': df.isnull().sum().sum(),
+            'missing_percentage': (df.isnull().sum().sum() / (df.shape[0] * df.shape[1])) * 100,
+            'constant_columns': [],
+            'high_cardinality_columns': []
+        },
+        'column_stats': {}
+    }
+    
+    for col in df.columns:
+        col_info = {
+            'name': col,
+            'dtype': str(df[col].dtype),
+            'missing_count': df[col].isnull().sum(),
+            'missing_percentage': (df[col].isnull().sum() / len(df)) * 100,
+            'unique_count': df[col].nunique(),
+            'cardinality_ratio': df[col].nunique() / len(df),
+            'sample_values': df[col].dropna().head(3).tolist() if len(df[col].dropna()) > 0 else []
+        }
+        
+        # Check if column is constant
+        if col_info['unique_count'] <= 1:
+            profile['data_health']['constant_columns'].append(col)
+        
+        # Check for high cardinality (might be ID columns)
+        if col_info['cardinality_ratio'] > 0.9 and col_info['unique_count'] > 10:
+            profile['data_health']['high_cardinality_columns'].append(col)
+        
+        # Type-specific stats
+        if df[col].dtype in ['int64', 'float64']:
+            col_info.update({
+                'min': df[col].min() if not df[col].isnull().all() else None,
+                'max': df[col].max() if not df[col].isnull().all() else None,
+                'mean': df[col].mean() if not df[col].isnull().all() else None,
+                'median': df[col].median() if not df[col].isnull().all() else None,
+                'std': df[col].std() if not df[col].isnull().all() else None,
+                'has_outliers': detect_outliers(df[col]) if not df[col].isnull().all() else False
+            })
+        elif df[col].dtype == 'object':
+            if not df[col].isnull().all():
+                value_counts = df[col].value_counts()
+                col_info.update({
+                    'top_values': value_counts.head(5).to_dict(),
+                    'is_categorical': col_info['unique_count'] < len(df) * 0.5,
+                    'avg_length': df[col].astype(str).str.len().mean()
+                })
+        
+        profile['columns'].append(col_info)
+        profile['column_stats'][col] = col_info
+    
+    return profile
+
+def detect_outliers(series):
+    """Simple outlier detection using IQR method"""
+    try:
+        Q1 = series.quantile(0.25)
+        Q3 = series.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        outliers = series[(series < lower_bound) | (series > upper_bound)]
+        return len(outliers) > 0
+    except:
+        return False
+
+
 def analyze_dataset_context(df):
     """Analyze dataset and provide context-aware suggestions"""
     try:
@@ -122,36 +194,37 @@ def analyze_dataset_context(df):
         }
         
         prompt = f"""
-        Analyze this dataset and provide insights:
+        Analyze this dataset and provide intelligent, specific insights:
         
         Dataset Summary:
         - Shape: {summary['shape']} (rows, columns)
         - Columns: {summary['columns']}
         - Data types: {summary['dtypes']}
+        - Numeric columns: {summary['numeric_cols']}
+        - Categorical columns: {summary['categorical_cols']}
         - Sample data: {summary['sample_data']}
         - Missing values: {summary['missing_values']}
         
-        Please provide:
-        1. What this dataset appears to be about (domain/context)
-        2. 5 specific, actionable SQL queries that would provide valuable insights
-        3. 3 most important visualizations that should be created first
-        4. Key patterns or relationships to explore
+        Based on the actual column names and data types, provide:
+        1. What domain/business context this data represents (be specific, not generic)
+        2. 5 SPECIFIC SQL queries using actual column names that would reveal valuable business insights
+        3. 3 priority visualizations that make sense for this exact dataset
+        4. Avoid generic responses like "dataset uploaded successfully"
         
-        Format your response in JSON:
+        Format response as JSON:
         {{
-            "context": "Brief description of what this data represents",
-            "domain": "business/finance/health/education/etc",
+            "context": "Specific description of what this data represents (e.g., 'Sales transaction data with customer demographics and purchase history')",
+            "domain": "specific domain (e.g., 'e-commerce', 'healthcare', 'finance')",
             "suggested_queries": [
-                "SELECT COUNT(*) FROM data GROUP BY category_column",
-                "SELECT AVG(numeric_column) FROM data WHERE condition",
-                ...
+                "SELECT specific_column, COUNT(*) FROM data GROUP BY specific_column ORDER BY COUNT(*) DESC LIMIT 10",
+                "SELECT AVG(specific_numeric_column) FROM data WHERE specific_condition",
+                ...use actual column names from the data...
             ],
             "priority_visualizations": [
-                {{"type": "bar", "description": "Count by category", "reason": "Shows distribution"}},
-                {{"type": "scatter", "description": "Correlation analysis", "reason": "Reveals relationships"}},
-                {{"type": "heatmap", "description": "Missing data pattern", "reason": "Data quality check"}}
-            ],
-            "key_insights": ["insight1", "insight2", "insight3"]
+                {{"type": "bar", "description": "Distribution of [specific column]", "reason": "Shows business-relevant patterns"}},
+                {{"type": "scatter", "description": "[specific columns] correlation", "reason": "Reveals relationships between key metrics"}},
+                {{"type": "time_series", "description": "Trend over [time column]", "reason": "Shows temporal patterns"}}
+            ]
         }}
         """
         
@@ -168,20 +241,33 @@ def analyze_dataset_context(df):
         
     except Exception as e:
         print(f"Analysis error: {e}")
+        # Create smarter fallback based on actual data
+        sample_numeric = [col for col in df.select_dtypes(include=[np.number]).columns[:2]]
+        sample_categorical = [col for col in df.select_dtypes(include=['object']).columns[:2]]
+        
+        fallback_queries = []
+        fallback_queries.append(f"SELECT COUNT(*) as total_rows FROM data")
+        
+        if sample_categorical:
+            fallback_queries.append(f"SELECT \"{sample_categorical[0]}\", COUNT(*) as count FROM data GROUP BY \"{sample_categorical[0]}\" ORDER BY count DESC LIMIT 10")
+        
+        if sample_numeric:
+            fallback_queries.append(f"SELECT AVG(\"{sample_numeric[0]}\") as average, MIN(\"{sample_numeric[0]}\") as minimum, MAX(\"{sample_numeric[0]}\") as maximum FROM data")
+        
+        if len(sample_numeric) >= 2:
+            fallback_queries.append(f"SELECT \"{sample_numeric[0]}\", \"{sample_numeric[1]}\" FROM data WHERE \"{sample_numeric[0]}\" IS NOT NULL AND \"{sample_numeric[1]}\" IS NOT NULL LIMIT 100")
+        
+        fallback_queries.append("SELECT * FROM data LIMIT 20")
+        
         return {
-            "context": "Dataset uploaded successfully",
-            "domain": "general", 
-            "suggested_queries": [
-                "SELECT * FROM data LIMIT 10",
-                "SELECT COUNT(*) FROM data",
-                f"SELECT * FROM data WHERE {df.columns[0]} IS NOT NULL LIMIT 5"
-            ],
+            "context": f"Dataset with {df.shape[0]} rows and {df.shape[1]} columns containing {len(sample_numeric)} numeric and {len(sample_categorical)} text columns",
+            "domain": "data-analysis", 
+            "suggested_queries": fallback_queries[:5],
             "priority_visualizations": [
-                {"type": "bar", "description": "Basic distribution", "reason": "Overview of data"},
-                {"type": "line", "description": "Trend analysis", "reason": "Pattern detection"},
-                {"type": "scatter", "description": "Relationship analysis", "reason": "Correlation check"}
-            ],
-            "key_insights": ["Data contains " + str(df.shape[0]) + " records", "Multiple columns available for analysis"]
+                {"type": "bar", "description": f"Distribution of {sample_categorical[0] if sample_categorical else 'categories'}", "reason": "Shows data distribution patterns"},
+                {"type": "scatter", "description": f"Relationship between {sample_numeric[0] if sample_numeric else 'variables'} and others", "reason": "Reveals correlations"},
+                {"type": "histogram", "description": f"Frequency distribution of {sample_numeric[0] if sample_numeric else 'numeric values'}", "reason": "Shows data spread and outliers"}
+            ]
         }
 
 
@@ -313,21 +399,26 @@ def dataset_preview(request, dataset_name):
         df = pd.read_csv(io.BytesIO(res))
         print(f"✅ Loaded dataset from Supabase: {dataset_name}")  # DEBUG
         
+        # Generate comprehensive data profile
+        data_profile = generate_data_profile(df)
+        
         # Analyze dataset context and provide suggestions
         analysis = analyze_dataset_context(df)
         
     except Exception as e:
         df = pd.DataFrame()
         analysis = None
+        data_profile = None
         print(f"❌ Failed to load dataset from Supabase: {e}")  # DEBUG
         messages.error(request, f"Dataset not found. It may have been cleaned up or your session expired. Please upload the dataset again.")
         return redirect("index")
 
     context = {
-        "dataset": {"name": dataset_name},
+        "dataset": {"name": dataset_name, "original_filename": dataset_name},
         "columns": df.columns.tolist() if not df.empty else [],
         "preview_rows": df.head(5).values.tolist() if not df.empty else [],
-        "analysis": analysis,  # Add analysis to context
+        "analysis": analysis,
+        "data_profile": data_profile,  # Add comprehensive data profile
     }
 
     return render(request, "dataset_preview.html", context)
@@ -344,6 +435,14 @@ def full_dataset(request):
         res = supabase.storage.from_(SUPABASE_BUCKET).download(path_in_bucket)
         df = pd.read_csv(io.BytesIO(res))
 
+        # Get query parameters for pagination
+        limit = int(request.GET.get('limit', 1000))
+        offset = int(request.GET.get('offset', 0))
+        
+        # Apply pagination
+        total_rows = len(df)
+        df_page = df.iloc[offset:offset+limit]
+
         def make_json_safe(x):
             if isinstance(x, (np.integer, int)):
                 return int(x)
@@ -357,11 +456,15 @@ def full_dataset(request):
                 return bool(x)
             return str(x)
 
-        safe_rows = [{col: make_json_safe(row[col]) for col in df.columns} for _, row in df.iterrows()]
+        safe_rows = [{col: make_json_safe(row[col]) for col in df_page.columns} for _, row in df_page.iterrows()]
 
         return JsonResponse({
             "columns": df.columns.tolist(),
-            "rows": safe_rows
+            "rows": safe_rows,
+            "total_rows": total_rows,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + limit < total_rows
         })
 
     except Exception as e:
@@ -523,8 +626,10 @@ def run_query(request, dataset_name):
         print(f"DEBUG: Table name validation passed for: {dataset_name}")
         
         # Optional: add LIMIT 1000 if none present (prevents giant tables)
+        auto_limit_added = False
         if not re.search(r'(?is)\blimit\s+\d+\b', sql_query):
             sql_query = sql_query[:-1] + " LIMIT 1000;"
+            auto_limit_added = True
 
         print(f"DEBUG: Generated SQL: {sql_query}")
 
@@ -536,11 +641,12 @@ def run_query(request, dataset_name):
             return JsonResponse({
                 "query": sql_query,
                 "result": [],
-                "error": f"Query failed: {str(e)}. Available columns: {', '.join(cols)}"
+                "error": f"Query failed: {str(e)}. Available columns: {', '.join(cols)}",
+                "auto_limit_added": auto_limit_added
             })
 
         if result_df.empty:
-            return JsonResponse({"query": sql_query, "result": []})
+            return JsonResponse({"query": sql_query, "result": [], "auto_limit_added": auto_limit_added})
 
         # Convert DataFrame to list of dictionaries for JSON response
         def make_json_safe(x):
@@ -570,6 +676,7 @@ def run_query(request, dataset_name):
             "query": sql_query, 
             "result": result_data,
             "visualization_suggestion": visualization_suggestion,
+            "auto_limit_added": auto_limit_added,
             "data_summary": {
                 "rows": len(result_data),
                 "columns": list(result_df.columns),
