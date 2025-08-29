@@ -1099,7 +1099,7 @@
         <button class="control-btn" id="sidebarToggle">☰</button>
         <div class="header-controls">
           <button class="control-btn" id="datasetToggle">📊 Dataset</button>
-          <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+          <button class="theme-toggle" id="themeToggle">🌙</button>
         </div>
       </div>
       
@@ -1230,17 +1230,25 @@
 <script>
 // Theme toggle functionality
 function toggleTheme() {
+  console.log('Toggle theme called'); // Debug log
   const body = document.body;
   const themeToggle = document.getElementById('themeToggle');
+  
+  if (!themeToggle) {
+    console.error('Theme toggle button not found in toggleTheme function');
+    return;
+  }
   
   if (body.getAttribute('data-theme') === 'dark') {
     body.removeAttribute('data-theme');
     themeToggle.textContent = '🌙';
     localStorage.setItem('theme', 'light');
+    console.log('Switched to light theme');
   } else {
     body.setAttribute('data-theme', 'dark');
     themeToggle.textContent = '☀️';
     localStorage.setItem('theme', 'dark');
+    console.log('Switched to dark theme');
   }
 }
 
@@ -1249,13 +1257,29 @@ document.addEventListener('DOMContentLoaded', function() {
   const savedTheme = localStorage.getItem('theme');
   const themeToggle = document.getElementById('themeToggle');
   
+  console.log('Initializing theme, saved theme:', savedTheme); // Debug log
+  
+  if (!themeToggle) {
+    console.error('Theme toggle button not found during initialization');
+    return;
+  }
+  
   if (savedTheme === 'dark') {
     document.body.setAttribute('data-theme', 'dark');
     themeToggle.textContent = '☀️';
+    console.log('Applied dark theme from localStorage');
+  } else {
+    document.body.removeAttribute('data-theme');
+    themeToggle.textContent = '🌙';
+    console.log('Applied light theme (default or from localStorage)');
   }
   
   // Add event listeners
-  themeToggle.addEventListener('click', toggleTheme);
+  if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+  } else {
+    console.error('Theme toggle button not found');
+  }
   
   // Tab functionality
   const tabBtns = document.querySelectorAll('.tab-btn');
