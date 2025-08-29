@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Datanaut.ai</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: auto;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 14px 28px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #fff;
+      background-color: #333;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .btn:hover {
+      background-color: #555;
+    }
+
+    .dataset-list {
+      margin-top: 40px;
+      text-align: left;
+    }
+
+    .dataset-item {
+      padding: 12px 16px;
+      background: #fff;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .dataset-item a {
+      text-decoration: none;
+      color: #333;
+      font-weight: bold;
+    }
+
+    .dataset-item a:hover {
+      color: #007bff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Datanaut.ai</h1>
+
+    <!-- Upload form -->
+    <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
+      {% csrf_token %}
+      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
+      <label for="fileInput" class="btn">Upload Dataset</label>
+    </form>
+
+    <!-- List of uploaded datasets -->
+    <div class="dataset-list">
+      <h2>📂 Your Datasets</h2>
+      {% if datasets %}
+        {% for dataset in datasets %}
+          <div class="dataset-item">
+            <a href="{% url 'dataset_preview' dataset.id %}">
+              {{ dataset.name }}
+            </a>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>No datasets uploaded yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

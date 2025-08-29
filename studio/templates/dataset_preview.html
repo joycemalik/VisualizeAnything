@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dataset Preview - Datanaut.ai</title>
+  <style>
+    :root { --bg:#f8f9fb; --text:#222; --muted:#666; --card:#fff; --brand:#111; }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px 20px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, Segoe UI, Arial, sans-serif;
+    }
+
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    h1 {
+      margin: 0 0 8px 0;
+      text-align: center;
+      font-weight: 700;
+      font-size: 40px;
+      letter-spacing: 0.3px;
+      color: var(--brand);
+    }
+
+    .sub {
+      text-align: center;
+      color: var(--muted);
+      margin: 0 0 28px 0;
+      font-size: 18px;
+    }
+
+    /* Card preview */
+    .card {
+      position: relative;
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.08);
+      padding: 18px;
+      overflow: hidden;
+      transition: transform .15s ease, box-shadow .15s ease;
+      cursor: pointer;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 40px rgba(0,0,0,.12);
+    }
+
+    .table-wrap { overflow: auto; border-radius: 14px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fff;
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      white-space: nowrap;
+    }
+    th {
+      background: #1f1f1f;
+      color: #fff;
+      font-weight: 600;
+      border-bottom: none;
+    }
+    tr:nth-child(even) td { background: #fafbfc; }
+
+    .fade-mask {
+      pointer-events: none;
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 90px;
+      background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, #fff 70%);
+    }
+
+    .hint {
+      margin: 14px 6px 0;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: right;
+    }
+
+    /* Sidebar (canvas style) */
+   .sidebar {
+      position: fixed;
+      top: 0;
+      right: -70%; /* hidden initially on the right */
+      width: 70%;
+      height: 100%;
+      background: #fff;
+      border-left: 1px solid #ddd; /* changed border to left */
+      box-shadow: -2px 0 8px rgba(0,0,0,0.3); /* shadow on the left side */
+      overflow-y: auto;
+      transition: right 0.3s ease-in-out; /* animate right instead of left */
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .sidebar.active {
+      right: 0; /* slide in from right */
+    }
+
+     .chat-input {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: white;
+      border-top: 1px solid #ddd;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      box-sizing: border-box;
+    }
+
+    .chat-input input {
+      flex: 1;
+      padding: 10px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .chat-input button {
+      padding: 10px 16px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .chat-input button:hover {
+      background: #4338ca;
+    }
+
+    .result-table {
+      border-collapse: collapse;
+      margin-top: 10px;
+      width: 100%;
+      font-size: 14px;
+    }
+    .result-table th,
+    .result-table td {
+      border: 1px solid #ccc;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .result-table th {
+      background: #f3f4f6;
+      font-weight: bold;
+    }
+
+
+    .overlay {
+      position: fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      background:rgba(0,0,0,0.3);
+      display:none;
+      z-index:900;
+    }
+    .overlay.active { display:block; }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 32px; }
+      .sub { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Datanaut.ai</h1>
+    <p class="sub">Preview: <strong>{{ dataset.name }}</strong></p>
+
+    <!-- PREVIEW CARD -->
+    <div class="card" id="previewCard" title="Click to open full dataset">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {% for col in columns %}
+                <th>{{ col }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview_rows %}
+              <tr>
+                {% for value in row %}
+                  <td>{{ value }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="fade-mask"></div>
+    </div>
+
+    <div class="hint">Click the canvas to view the top 100 entries.</div>
+  </div>
+
+  <!-- Sidebar (hidden initially) -->
+  <div id="datasetSidebar" class="sidebar">
+    <h2>Full Dataset</h2>
+    <table id="fullDataset"></table>
+  </div>
+  <div id="overlay" class="overlay"></div>
+
+
+   <div class="chat-container" id="chat-container">
+    <!-- messages will appear here -->
+  </div>
+
+  <!-- Input bar -->
+  <div class="chat-input">
+    <input type="text" id="query-input" placeholder="Ask something about the dataset...">
+    <button onclick="sendQuery()">Send</button>
+  </div>
+
+
+<script>
+const previewCard = document.getElementById("previewCard");
+const sidebar = document.getElementById("datasetSidebar");
+const overlay = document.getElementById("overlay");
+const fullDataset = document.getElementById("fullDataset");
+
+previewCard.addEventListener("click", async () => {
+    sidebar.classList.add("active");
+    overlay.classList.add("active");
+    fullDataset.innerHTML = "<tr><td>Loading...</td></tr>";
+
+    try {
+        const response = await fetch("/full_dataset/");
+        const data = await response.json();
+
+        if (data.error) {
+            console.error("Dataset error:", data.error);
+            fullDataset.innerHTML = `<tr><td style='color:red;'>Error: ${data.error}</td></tr>`;
+            return;
+        }
+
+        // Render top 100 rows
+        let html = "<thead><tr>";
+        data.columns.forEach(col => html += `<th>${col}</th>`);
+        html += "</tr></thead><tbody>";
+
+        const rowsToShow = data.rows.slice(0, 100);
+        rowsToShow.forEach(row => {
+            html += "<tr>";
+            data.columns.forEach(col => {
+                html += `<td>${row[col] !== null ? row[col] : ''}</td>`;
+            });
+            html += "</tr>";
+        });
+        html += "</tbody>";
+        fullDataset.innerHTML = html;
+
+        console.log("Dataset loaded (top 50 rows):", data);
+
+    } catch (err) {
+        console.error("Network/parse error:", err);
+        fullDataset.innerHTML = `<tr><td style='color:red;'>Network/parse error: ${err}</td></tr>`;
+    }
+});
+
+overlay.addEventListener("click", () => {
+    sidebar.classList.remove("active");
+    overlay.classList.remove("active");
+});
+
+</script>
+
+<script>
+    const chatContainer = document.getElementById("chat-container");
+    const queryInput = document.getElementById("query-input");
+
+    function appendMessage(content, sender="bot") {
+      const msg = document.createElement("div");
+      msg.className = `message ${sender === "user" ? "user-message" : "bot-message"}`;
+      msg.innerHTML = content;
+      chatContainer.appendChild(msg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function sendQuery() {
+      const query = queryInput.value.trim();
+      if (!query) return;
+
+      // Show user message
+      appendMessage(query, "user");
+      queryInput.value = "";
+
+      try {
+        const response = await fetch(`/run_query/{{ dataset.name }}/`, {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ query })
+        });
+
+        const data = await response.json();
+
+        // Format bot reply
+        let reply = `<b>SQL:</b> ${data.query}<br>`;
+        if (Array.isArray(data.result) && data.result.length > 0) {
+          reply += "<table class='result-table'><tr>";
+          Object.keys(data.result[0]).forEach(col => reply += `<th>${col}</th>`);
+          reply += "</tr>";
+          data.result.forEach(row => {
+            reply += "<tr>";
+            Object.values(row).forEach(val => reply += `<td>${val ?? ""}</td>`);
+            reply += "</tr>";
+          });
+          reply += "</table>";
+        } else {
+          reply += `<div>No results found.</div>`;
+        }
+
+        appendMessage(reply, "bot");
+
+      } catch (error) {
+        appendMessage("⚠️ Error running query.", "bot");
+        console.error(error);
+      }
+    }
+
+    // Enter key to send
+    queryInput.addEventListener("keypress", function(e) {
+      if (e.key === "Enter") sendQuery();
+    });
+  </script>
+
+
+
+</body>
+</html>
