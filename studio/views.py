@@ -114,7 +114,8 @@ def dataset_preview(request, dataset_name):
     except Exception as e:
         df = pd.DataFrame()
         print(f"❌ Failed to load dataset from Supabase: {e}")  # DEBUG
-        messages.error(request, f"Failed to load dataset: {str(e)}")
+        messages.error(request, f"Dataset not found. It may have been cleaned up or your session expired. Please upload the dataset again.")
+        return redirect("index")
 
     context = {
         "dataset": {"name": dataset_name},
@@ -238,7 +239,11 @@ def run_query(request, dataset_name):
     print(f"DEBUG: run_query session dataset_path: {path_in_bucket}")
 
     if not path_in_bucket:
-        return JsonResponse({"query": user_input or "", "result": [], "error": "No dataset found in session."})
+        return JsonResponse({
+            "query": user_input or "", 
+            "result": [], 
+            "error": "No dataset found in session. Please upload a new dataset to continue."
+        })
 
     # Load CSV
     try:
@@ -247,7 +252,17 @@ def run_query(request, dataset_name):
         print(f"✅ Dataset loaded for query: {dataset_name}")
     except Exception as e:
         print(f"❌ Failed to load dataset: {e}")
-        return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to load dataset: {str(e)}"})
+        error_msg = "Dataset file not found. This may happen if:"
+        error_msg += "<br>• The file was automatically cleaned up"
+        error_msg += "<br>• Your session has expired"
+        error_msg += "<br>• There was a storage issue"
+        error_msg += "<br><br>Please <a href='/' style='color: #4f46e5; text-decoration: underline;'>upload your dataset again</a> to continue."
+        
+        return JsonResponse({
+            "query": user_input or "", 
+            "result": [], 
+            "error": error_msg
+        })
 
     # Build in-memory SQLite table
     conn = sqlite3.connect(":memory:")
@@ -285,9 +300,13 @@ def run_query(request, dataset_name):
         if not re.match(r'(?is)^\s*select\b', sql_query):
             return JsonResponse({"query": sql_query, "result": [], "error": "Only SELECT queries are allowed."})
 
-        # Must end with a single semicolon and be a single statement
-        if not sql_query.endswith(";") or re.search(r";\s*\S", sql_query):
-            return JsonResponse({"query": sql_query, "result": [], "error": "Return exactly one SELECT statement ending with a semicolon."})
+        # Auto-fix semicolon if missing
+        if not sql_query.endswith(";"):
+            sql_query = sql_query + ";"
+
+        # Check for multiple statements (semicolon in the middle)
+        if re.search(r";\s*\S", sql_query):
+            return JsonResponse({"query": sql_query, "result": [], "error": "Only single SELECT statements are allowed."})
 
         # Simple table name check - just ensure the dataset name appears somewhere in the query
         # This is more flexible than strict regex matching
