@@ -356,7 +356,20 @@ def run_query(request, dataset_name):
                 row_dict[col] = make_json_safe(row[col])
             result_data.append(row_dict)
 
-        return JsonResponse({"query": sql_query, "result": result_data})
+        # Add visualization suggestions
+        visualization_suggestion = suggest_visualization_type(result_df, sql_query)
+
+        return JsonResponse({
+            "query": sql_query, 
+            "result": result_data,
+            "visualization_suggestion": visualization_suggestion,
+            "data_summary": {
+                "rows": len(result_data),
+                "columns": list(result_df.columns),
+                "numeric_columns": list(result_df.select_dtypes(include=[np.number]).columns),
+                "categorical_columns": list(result_df.select_dtypes(include=['object']).columns)
+            }
+        })
 
     except Exception as e:
         return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to generate/parse SQL: {str(e)}"})
@@ -364,3 +377,27 @@ def run_query(request, dataset_name):
     finally:
         conn.close()
 
+
+def suggest_visualization_type(df, query):
+    """Suggest the best visualization type based on data characteristics"""
+    query_lower = query.lower()
+    
+    # Check for aggregation functions
+    if any(func in query_lower for func in ['count', 'sum', 'avg', 'average', 'max', 'min']):
+        if 'group by' in query_lower:
+            return "bar_chart"
+        elif len(df) == 1:
+            return "metric_card"
+        else:
+            return "bar_chart"
+    
+    # Check for time series
+    date_columns = [col for col in df.columns if any(word in col.lower() for word in ['date', 'time', 'year', 'month'])]
+    if date_columns and len(df) > 1:
+        return "line_chart"
+    
+    # Categorical data
+    if len(df) <= 10 and len(df.columns) == 2:
+        return "pie_chart"
+    
+    return "bar_chart"

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dataset Preview - Datanaut.ai</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root { --bg:#f8f9fb; --text:#222; --muted:#666; --card:#fff; --brand:#111; }
 
@@ -223,12 +224,51 @@
       background: #fff5f5;
       border: 1px solid #fecaca;
     }
-  </style>
+
 
     @media (max-width: 640px) {
       h1 { font-size: 32px; }
       .sub { font-size: 16px; }
     }
+
+    
+    .visualize-btn {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-top: 10px;
+      transition: background 0.2s;
+    }
+    
+    .visualize-btn:hover {
+      background: #059669;
+    }
+    
+    .chart-container {
+      margin-top: 15px;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .chart-wrapper {
+      position: relative;
+      height: 400px;
+      width: 100%;
+    }
+    
+    .chart-title {
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: #1f1f1f;
+      text-align: center;
+    }
+
   </style>
 </head>
 <body>
@@ -280,6 +320,12 @@
   <div class="chat-input">
     <input type="text" id="query-input" placeholder="Ask something about the dataset...">
     <button onclick="sendQuery()">Send</button>
+  </div>
+
+  <!-- Visualization examples -->
+  <div style="padding: 10px; background: #f8f9fa; border-top: 1px solid #e9ecef; font-size: 12px; color: #666; position: fixed; bottom: 60px; left: 0; right: 0;">
+    <b>💡 Try these visualization-friendly queries:</b><br>
+    • "Count employees by department" • "Average salary by job role" • "Show age distribution" • "Total sales by month"
   </div>
 
 
@@ -338,6 +384,300 @@ overlay.addEventListener("click", () => {
 <script>
     const chatContainer = document.getElementById("chat-container");
     const queryInput = document.getElementById("query-input");
+    let chartInstances = {}; // Keep track of charts for cleanup
+
+    function appendMessage(content, sender="bot") {
+      const msg = document.createElement("div");
+      msg.className = `message ${sender === "user" ? "user-message" : "bot-message"}`;
+      msg.innerHTML = content;
+      chatContainer.appendChild(msg);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function determineChartType(data, columns, query) {
+      const lowerQuery = query.toLowerCase();
+      
+      // If query contains aggregation functions, likely needs bar/pie chart
+      if (lowerQuery.includes('count') || lowerQuery.includes('sum') || 
+          lowerQuery.includes('avg') || lowerQuery.includes('average')) {
+        
+        // If grouping by category, use bar chart
+        if (lowerQuery.includes('group by') || columns.length === 2) {
+          return 'bar';
+        }
+        // Single aggregated value, use doughnut
+        if (data.length === 1) {
+          return 'doughnut';
+        }
+      }
+      
+      // Time series data
+      if (columns.some(col => col.toLowerCase().includes('date') || 
+                             col.toLowerCase().includes('time') || 
+                             col.toLowerCase().includes('year'))) {
+        return 'line';
+      }
+      
+      // Categorical data with counts
+      if (data.length <= 10 && columns.length === 2) {
+        return 'pie';
+      }
+      
+      // Default to bar chart
+      return 'bar';
+    }
+
+    function createChart(chartId, data, columns, chartType, query) {
+      console.log('Creating chart:', chartId, chartType, data, columns);
+      
+      // Check if Chart.js is loaded
+      if (typeof Chart === 'undefined') {
+        console.error('Chart.js is not loaded!');
+        const errorDiv = document.createElement('div');
+        errorDiv.innerHTML = '<div style="color: red; padding: 10px;">⚠️ Chart.js library failed to load. Please refresh the page.</div>';
+        document.getElementById(chartId).parentNode.appendChild(errorDiv);
+        return;
+      }
+      
+      const ctx = document.getElementById(chartId).getContext('2d');
+      
+      let chartData, chartOptions;
+      
+      switch (chartType) {
+        case 'bar':
+          chartData = createBarChartData(data, columns);
+          chartOptions = createBarChartOptions();
+          break;
+        case 'line':
+          chartData = createLineChartData(data, columns);
+          chartOptions = createLineChartOptions();
+          break;
+        case 'pie':
+        case 'doughnut':
+          chartData = createPieChartData(data, columns);
+          chartOptions = createPieChartOptions();
+          break;
+        default:
+          chartData = createBarChartData(data, columns);
+          chartOptions = createBarChartOptions();
+      }
+      
+      console.log('Chart data:', chartData);
+      console.log('Chart options:', chartOptions);
+      
+      // Destroy existing chart if it exists
+      if (chartInstances[chartId]) {
+        chartInstances[chartId].destroy();
+      }
+      
+      try {
+        chartInstances[chartId] = new Chart(ctx, {
+          type: chartType,
+          data: chartData,
+          options: chartOptions
+        });
+        console.log('Chart created successfully');
+      } catch (error) {
+        console.error('Error creating chart:', error);
+      }
+    }
+
+    function createBarChartData(data, columns) {
+      const labels = data.map(row => String(row[columns[0]] || ''));
+      const values = data.map(row => Number(row[columns[1]] || 0));
+      
+      return {
+        labels: labels,
+        datasets: [{
+          label: columns[1] || 'Value',
+          data: values,
+          backgroundColor: 'rgba(79, 70, 229, 0.8)',
+          borderColor: 'rgba(79, 70, 229, 1)',
+          borderWidth: 1
+        }]
+      };
+    }
+
+    function createLineChartData(data, columns) {
+      const labels = data.map(row => String(row[columns[0]] || ''));
+      const values = data.map(row => Number(row[columns[1]] || 0));
+      
+      return {
+        labels: labels,
+        datasets: [{
+          label: columns[1] || 'Value',
+          data: values,
+          borderColor: 'rgba(79, 70, 229, 1)',
+          backgroundColor: 'rgba(79, 70, 229, 0.1)',
+          tension: 0.4,
+          fill: true
+        }]
+      };
+    }
+
+    function createPieChartData(data, columns) {
+      const labels = data.map(row => String(row[columns[0]] || ''));
+      const values = data.map(row => Number(row[columns[1]] || 0));
+      
+      const colors = [
+        '#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1'
+      ];
+      
+      return {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors.slice(0, values.length),
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      };
+    }
+
+    function createBarChartOptions() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: {
+              color: 'rgba(0,0,0,0.1)'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      };
+    }
+
+    function createLineChartOptions() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: {
+              color: 'rgba(0,0,0,0.1)'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      };
+    }
+
+    function createPieChartOptions() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              padding: 20,
+              usePointStyle: true
+            }
+          }
+        }
+      };
+    }
+
+    function canVisualize(data) {
+      console.log('Checking if data can be visualized:', data);
+      
+      if (!data || data.length === 0) {
+        console.log('No data available');
+        return false;
+      }
+      
+      const columns = Object.keys(data[0]);
+      console.log('Columns found:', columns);
+      
+      // Must have at least 1 column and some data
+      if (columns.length === 0) {
+        console.log('No columns found');
+        return false;
+      }
+      
+      // Check if there's at least one numeric column
+      const hasNumericData = data.some(row => 
+        Object.values(row).some(val => 
+          !isNaN(val) && val !== null && val !== ''
+        )
+      );
+      
+      console.log('Has numeric data:', hasNumericData);
+      return hasNumericData;
+    }
+
+    function visualizeData(button, data, query) {
+      console.log('Visualizing data:', data, 'Query:', query);
+      
+      // Disable button to prevent multiple charts
+      button.disabled = true;
+      button.textContent = "📊 Generating...";
+      
+      // Find the message element
+      const messageElement = button.closest('.message');
+      
+      // Generate visualization
+      setTimeout(() => {
+        try {
+          generateVisualization(data, query, messageElement);
+          button.style.display = 'none'; // Hide button after chart is created
+        } catch (error) {
+          console.error('Error generating visualization:', error);
+          button.textContent = "❌ Error";
+          button.disabled = false;
+        }
+      }, 500);
+    }
+
+    function generateVisualization(data, query, messageElement) {
+      console.log('generateVisualization called with:', data, query);
+      
+      // Create unique ID for this chart
+      const chartId = 'chart_' + Date.now();
+      
+      // Create chart container
+      const chartContainer = document.createElement('div');
+      chartContainer.className = 'chart-container';
+      chartContainer.innerHTML = `
+        <div class="chart-title">📊 Data Visualization</div>
+        <div class="chart-wrapper">
+          <canvas id="${chartId}"></canvas>
+        </div>
+      `;
+      
+      messageElement.appendChild(chartContainer);
+      
+      // Analyze data and create appropriate chart
+      const columns = Object.keys(data[0]);
+      const chartType = determineChartType(data, columns, query);
+      
+      console.log('Chart type determined:', chartType, 'Columns:', columns);
+      
+      createChart(chartId, data, columns, chartType, query);
+    }
 
     function appendMessage(content, sender="bot") {
       const msg = document.createElement("div");
@@ -367,6 +707,10 @@ overlay.addEventListener("click", () => {
 
         const data = await response.json();
 
+        // Create message element first
+        const messageElement = document.createElement("div");
+        messageElement.className = "message bot-message";
+
         // Format bot reply
         let reply = `<b>SQL Query:</b> <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${data.query}</code><br><br>`;
         
@@ -386,11 +730,36 @@ overlay.addEventListener("click", () => {
           });
           reply += "</tbody></table>";
           reply += `<div style="margin-top: 8px; font-size: 12px; color: #666;">📊 ${data.result.length} row(s) returned</div>`;
+          
+          // Add visualization button if data is suitable for charts
+          console.log('Checking if data can be visualized for result:', data.result);
+          if (canVisualize(data.result)) {
+            console.log('Adding visualization button');
+            const buttonId = 'viz-btn-' + Date.now();
+            reply += `<button class="visualize-btn" id="${buttonId}">📊 Visualize Data</button>`;
+            
+            // Store data for later use
+            setTimeout(() => {
+              const button = document.getElementById(buttonId);
+              if (button) {
+                console.log('Setting up button click listener');
+                button.addEventListener('click', () => {
+                  visualizeData(button, data.result, data.query);
+                });
+              } else {
+                console.error('Button not found:', buttonId);
+              }
+            }, 100);
+          } else {
+            console.log('Data cannot be visualized');
+          }
         } else {
           reply += `<div style="color: #666; font-style: italic; padding: 10px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">📭 No results found.</div>`;
         }
 
-        appendMessage(reply, "bot");
+        messageElement.innerHTML = reply;
+        chatContainer.appendChild(messageElement);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
 
       } catch (error) {
         const errorMsg = `
@@ -410,6 +779,15 @@ overlay.addEventListener("click", () => {
     // Enter key to send
     queryInput.addEventListener("keypress", function(e) {
       if (e.key === "Enter") sendQuery();
+    });
+
+    // Test if Chart.js is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof Chart !== 'undefined') {
+        console.log('✅ Chart.js loaded successfully, version:', Chart.version);
+      } else {
+        console.error('❌ Chart.js failed to load');
+      }
     });
   </script>
 
