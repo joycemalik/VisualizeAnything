@@ -26,9 +26,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-print("DEBUG: SUPABASE_URL:", SUPABASE_URL)
-print("DEBUG: SUPABASE_SERVICE_KEY loaded:", bool(SUPABASE_SERVICE_KEY))
-print("DEBUG: SUPABASE_BUCKET:", SUPABASE_BUCKET)
 
 TEMP_FILES = {}
 
@@ -227,12 +224,21 @@ def run_query(request, dataset_name):
     if request.method != "POST":
         return JsonResponse({"error": "POST request required"}, status=400)
 
-    user_input = request.POST.get("query")
+    # Handle both JSON and form data
+    if request.content_type == 'application/json':
+        try:
+            data = json.loads(request.body)
+            user_input = data.get("query")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+    else:
+        user_input = request.POST.get("query")
+    
     path_in_bucket = request.session.get("dataset_path")
     print(f"DEBUG: run_query session dataset_path: {path_in_bucket}")
 
     if not path_in_bucket:
-        return JsonResponse({"query": user_input, "result": "⚠ No dataset found in session."})
+        return JsonResponse({"query": user_input or "", "result": [], "error": "No dataset found in session."})
 
     # Load CSV
     try:
@@ -241,7 +247,7 @@ def run_query(request, dataset_name):
         print(f"✅ Dataset loaded for query: {dataset_name}")
     except Exception as e:
         print(f"❌ Failed to load dataset: {e}")
-        return JsonResponse({"query": user_input, "result": f"⚠ Failed to load dataset: {str(e)}"})
+        return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to load dataset: {str(e)}"})
 
     # Build in-memory SQLite table
     conn = sqlite3.connect(":memory:")
@@ -250,7 +256,7 @@ def run_query(request, dataset_name):
         df.to_sql(dataset_name, conn, index=False, if_exists="replace")
     except Exception as e:
         conn.close()
-        return JsonResponse({"query": user_input, "result": f"⚠ Failed to stage table: {str(e)}"})
+        return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to stage table: {str(e)}"})
 
     # Column metadata for the prompt
     columns = [{"name": c, "type": str(t)} for c, t in zip(df.columns, df.dtypes)]
@@ -277,23 +283,19 @@ def run_query(request, dataset_name):
 
         # Guards
         if not re.match(r'(?is)^\s*select\b', sql_query):
-            return JsonResponse({"query": sql_query, "result": "⚠ Only SELECT queries are allowed."})
+            return JsonResponse({"query": sql_query, "result": [], "error": "Only SELECT queries are allowed."})
 
         # Must end with a single semicolon and be a single statement
         if not sql_query.endswith(";") or re.search(r";\s*\S", sql_query):
-            return JsonResponse({"query": sql_query, "result": "⚠ Return exactly one SELECT statement ending with a semicolon."})
+            return JsonResponse({"query": sql_query, "result": [], "error": "Return exactly one SELECT statement ending with a semicolon."})
 
-        # Ensure it selects from the quoted table name
-        quoted_from = re.search(rf'(?is)\bfrom\s+"{re.escape(dataset_name)}"\b', sql_query)
-        if not quoted_from:
-            # If it referenced the same name unquoted, auto-fix once
-            unquoted_from = re.search(rf'(?is)\bfrom\s+{re.escape(dataset_name)}\b', sql_query)
-            if unquoted_from:
-                sql_query = re.sub(rf'(?is)\bfrom\s+{re.escape(dataset_name)}\b',
-                                   f'FROM "{dataset_name}"', sql_query, count=1)
-            else:
-                return JsonResponse({"query": sql_query, "result": f'⚠ Query must read FROM "{dataset_name}".'})
+        # Simple table name check - just ensure the dataset name appears somewhere in the query
+        # This is more flexible than strict regex matching
+        if dataset_name not in sql_query:
+            return JsonResponse({"query": sql_query, "result": [], "error": f'Query must reference the dataset "{dataset_name}".'})
 
+        print(f"DEBUG: Table name validation passed for: {dataset_name}")
+        
         # Optional: add LIMIT 1000 if none present (prevents giant tables)
         if not re.search(r'(?is)\blimit\s+\d+\b', sql_query):
             sql_query = sql_query[:-1] + " LIMIT 1000;"
@@ -307,17 +309,38 @@ def run_query(request, dataset_name):
             cols = df.columns.tolist()
             return JsonResponse({
                 "query": sql_query,
-                "result": f"⚠ Query failed: {str(e)}. Available columns: {', '.join(cols)}"
+                "result": [],
+                "error": f"Query failed: {str(e)}. Available columns: {', '.join(cols)}"
             })
 
         if result_df.empty:
-            return JsonResponse({"query": sql_query, "result": "⚠ No results found."})
+            return JsonResponse({"query": sql_query, "result": []})
 
-        result_html = f'<div class="table-responsive">{result_df.to_html(classes="table table-bordered", index=False)}</div>'
-        return JsonResponse({"query": sql_query, "result": result_html})
+        # Convert DataFrame to list of dictionaries for JSON response
+        def make_json_safe(x):
+            if isinstance(x, (np.integer, int)):
+                return int(x)
+            if isinstance(x, (np.floating, float)):
+                if pd.isna(x) or np.isinf(x):
+                    return None
+                return float(x)
+            if pd.isna(x):
+                return None
+            if isinstance(x, (np.bool_, bool)):
+                return bool(x)
+            return str(x)
+
+        result_data = []
+        for _, row in result_df.iterrows():
+            row_dict = {}
+            for col in result_df.columns:
+                row_dict[col] = make_json_safe(row[col])
+            result_data.append(row_dict)
+
+        return JsonResponse({"query": sql_query, "result": result_data})
 
     except Exception as e:
-        return JsonResponse({"query": user_input, "result": f"⚠ Failed to generate/parse SQL: {str(e)}"})
+        return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to generate/parse SQL: {str(e)}"})
 
     finally:
         conn.close()

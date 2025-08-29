@@ -314,7 +314,10 @@ overlay.addEventListener("click", () => {
 
         // Format bot reply
         let reply = `<b>SQL:</b> ${data.query}<br>`;
-        if (Array.isArray(data.result) && data.result.length > 0) {
+        
+        if (data.error) {
+          reply += `<div style="color: red;">⚠️ ${data.error}</div>`;
+        } else if (Array.isArray(data.result) && data.result.length > 0) {
           reply += "<table class='result-table'><tr>";
           Object.keys(data.result[0]).forEach(col => reply += `<th>${col}</th>`);
           reply += "</tr>";
