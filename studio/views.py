@@ -800,21 +800,104 @@ def generate_chart(request):
                     chart_explanation = f"This line chart shows the trend of {df.columns[1]} over {df.columns[0]}."
                 else:
                     return JsonResponse({'error': 'Need at least 2 columns for line chart'}, status=400)
+                    
+            elif chart_type == 'pie':
+                cat_cols = df.select_dtypes(include=['object']).columns
+                if len(cat_cols) > 0:
+                    # Get value counts for categorical column
+                    value_counts = df[cat_cols[0]].value_counts()
+                    # Limit to top 10 categories to avoid cluttered pie chart
+                    if len(value_counts) > 10:
+                        value_counts = value_counts.head(10)
+                    
+                    colors = plt.cm.Set3(range(len(value_counts)))
+                    wedges, texts, autotexts = ax.pie(value_counts.values, labels=value_counts.index, 
+                                                     autopct='%1.1f%%', colors=colors, startangle=90)
+                    ax.set_title(f'Pie Chart: Distribution of {cat_cols[0]}', fontsize=16, fontweight='bold')
+                    chart_explanation = f"This pie chart shows the distribution of {cat_cols[0]} categories."
+                else:
+                    return JsonResponse({'error': 'Need at least 1 categorical column for pie chart'}, status=400)
+                    
+            elif chart_type == 'histogram':
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    ax.hist(df[numeric_cols[0]].dropna(), bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+                    ax.set_title(f'Histogram: {numeric_cols[0]}', fontsize=16, fontweight='bold')
+                    ax.set_xlabel(numeric_cols[0])
+                    ax.set_ylabel('Frequency')
+                    chart_explanation = f"This histogram shows the frequency distribution of {numeric_cols[0]}."
+                else:
+                    return JsonResponse({'error': 'Need at least 1 numeric column for histogram'}, status=400)
+                    
+            elif chart_type == 'violin':
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    cat_cols = df.select_dtypes(include=['object']).columns
+                    if len(cat_cols) > 0:
+                        sns.violinplot(data=df, x=cat_cols[0], y=numeric_cols[0], ax=ax)
+                        ax.set_title(f'Violin Plot: {numeric_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
+                        chart_explanation = f"This violin plot shows the distribution shape of {numeric_cols[0]} across {cat_cols[0]} categories."
+                    else:
+                        sns.violinplot(data=df[numeric_cols], ax=ax)
+                        ax.set_title('Violin Plot of Numeric Variables', fontsize=16, fontweight='bold')
+                        chart_explanation = "This violin plot shows the distribution shape of numeric variables."
+                else:
+                    return JsonResponse({'error': 'Need at least 1 numeric column for violin plot'}, status=400)
+                    
+            elif chart_type == 'density':
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    for col in numeric_cols[:3]:  # Limit to first 3 numeric columns
+                        sns.kdeplot(data=df, x=col, ax=ax, label=col)
+                    ax.set_title('Density Plot of Numeric Variables', fontsize=16, fontweight='bold')
+                    ax.legend()
+                    chart_explanation = "This density plot shows the probability density function of numeric variables."
+                else:
+                    return JsonResponse({'error': 'Need at least 1 numeric column for density plot'}, status=400)
+                    
+            elif chart_type == 'pair':
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) >= 2:
+                    # Create pair plot (this will create a new figure)
+                    plt.close()  # Close the current figure
+                    
+                    # Limit to first 4 numeric columns to avoid too large plot
+                    cols_to_plot = numeric_cols[:4]
+                    pair_plot = sns.pairplot(df[cols_to_plot])
+                    pair_plot.fig.suptitle('Pair Plot of Numeric Variables', y=1.02, fontsize=16, fontweight='bold')
+                    
+                    # Convert to base64
+                    buffer = BytesIO()
+                    pair_plot.fig.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+                    buffer.seek(0)
+                    plot_data = buffer.getvalue()
+                    buffer.close()
+                    plt.close()
+                    
+                    plot_url = base64.b64encode(plot_data).decode()
+                    chart_explanation = f"This pair plot shows relationships between all numeric variables: {', '.join(cols_to_plot)}."
+                    
+                    # Skip the normal plotting process since we handled it here
+                    skip_normal_processing = True
+                else:
+                    return JsonResponse({'error': 'Need at least 2 numeric columns for pair plot'}, status=400)
             
-            # Rotate x-axis labels if they're long
-            ax.tick_params(axis='x', rotation=45)
-            plt.tight_layout()
-            
-            # Convert plot to base64 string
-            buffer = BytesIO()
-            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-            buffer.seek(0)
-            plot_data = buffer.getvalue()
-            buffer.close()
-            plt.close()
-            
-            # Encode to base64
-            plot_url = base64.b64encode(plot_data).decode()
+            # Only do normal processing if we didn't handle it specially (like pair plot)
+            if 'skip_normal_processing' not in locals():
+                # Rotate x-axis labels if they're long
+                ax.tick_params(axis='x', rotation=45)
+                plt.tight_layout()
+                
+                # Convert plot to base64 string
+                buffer = BytesIO()
+                plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+                buffer.seek(0)
+                plot_data = buffer.getvalue()
+                buffer.close()
+                plt.close()
+                
+                # Encode to base64
+                plot_url = base64.b64encode(plot_data).decode()
             
             # Generate AI explanation using Groq
             try:

@@ -387,9 +387,16 @@
       justify-content: space-between;
       align-items: center;
       background: var(--bg-primary);
-      position: sticky;
+      position: fixed;
       top: 0;
-      z-index: 100;
+      right: 0;
+      left: 260px;
+      z-index: 1001;
+      transition: left 0.3s ease;
+    }
+
+    .main-header.sidebar-collapsed {
+      left: 0;
     }
 
     .header-controls {
@@ -439,7 +446,7 @@
       max-width: 768px;
       margin: 0 auto;
       width: 100%;
-      padding: 0 24px;
+      padding: 80px 24px 0 24px; /* Add top padding for fixed header */
     }
 
     .messages-container {
@@ -512,20 +519,134 @@
       box-shadow: 0 4px 12px var(--shadow-lg);
     }
 
-    .dataset-preview.expanded {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 90vw;
-      height: 90vh;
-      z-index: 1000;
-      overflow: auto;
-      box-shadow: 0 20px 60px var(--shadow-lg);
-    }
-
     .dataset-preview.hidden {
       display: none;
+    }
+
+    /* Full Dataset Modal */
+    .dataset-modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.8);
+      backdrop-filter: blur(4px);
+    }
+
+    .dataset-modal-content {
+      background: var(--bg-primary);
+      margin: 2% auto;
+      padding: 24px;
+      border-radius: 12px;
+      width: 95%;
+      max-width: 1400px;
+      height: 90%;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dataset-modal-header {
+      display: flex;
+      justify-content: between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .dataset-modal-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-primary);
+      flex: 1;
+    }
+
+    .dataset-modal-close {
+      color: var(--text-secondary);
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 0 8px;
+    }
+
+    .dataset-modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    .dataset-modal-body {
+      flex: 1;
+      overflow: auto;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .full-dataset-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .full-dataset-table th,
+    .full-dataset-table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 13px;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .full-dataset-table th {
+      background: var(--bg-tertiary);
+      font-weight: 600;
+      color: var(--text-primary);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .full-dataset-table td {
+      color: var(--text-secondary);
+    }
+
+    .full-dataset-table tr:hover td {
+      background: var(--btn-secondary-hover);
+    }
+
+    .dataset-loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+
+    .load-more-btn {
+      background: var(--btn-primary);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin: 16px auto;
+      display: block;
+      transition: background-color 0.2s ease;
+    }
+
+    .load-more-btn:hover {
+      background: var(--btn-primary-hover);
+    }
+
+    .load-more-btn:disabled {
+      background: var(--text-muted);
+      cursor: not-allowed;
     }
 
     .preview-header {
@@ -809,7 +930,7 @@
       right: 0;
       bottom: 0;
       background: rgba(0,0,0,0.5);
-      z-index: 1000;
+      z-index: 999;
     }
 
     .overlay.active {
@@ -1088,6 +1209,21 @@
     </div>
   </div>
   
+  <!-- Dataset Modal -->
+  <div id="datasetModal" class="dataset-modal">
+    <div class="dataset-modal-content">
+      <div class="dataset-modal-header">
+        <div class="dataset-modal-title">📊 Full Dataset: {{ dataset.name }}</div>
+        <span class="dataset-modal-close" id="datasetModalClose">&times;</span>
+      </div>
+      <div class="dataset-modal-body" id="datasetModalBody">
+        <div class="dataset-loading">
+          🔄 Loading dataset...
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <!-- Overlay for mobile -->
   <div class="overlay" id="overlay"></div>
 
@@ -1170,23 +1306,55 @@ document.addEventListener('DOMContentLoaded', function() {
   const sidebarToggle = document.getElementById('sidebarToggle');
   const sidebarNav = document.getElementById('sidebarNav');
   const mainContent = document.querySelector('.main-content');
+  const mainHeader = document.querySelector('.main-header');
   const overlay = document.getElementById('overlay');
   
   sidebarToggle.addEventListener('click', function() {
-    sidebarNav.classList.toggle('collapsed');
-    mainContent.classList.toggle('sidebar-collapsed');
-    overlay.classList.toggle('active');
+    const isCollapsed = sidebarNav.classList.contains('collapsed');
+    
+    if (isCollapsed) {
+      // Show sidebar
+      sidebarNav.classList.remove('collapsed');
+      mainContent.classList.remove('sidebar-collapsed');
+      mainHeader.classList.remove('sidebar-collapsed');
+      overlay.classList.remove('active');
+    } else {
+      // Hide sidebar
+      sidebarNav.classList.add('collapsed');
+      mainContent.classList.add('sidebar-collapsed');
+      mainHeader.classList.add('sidebar-collapsed');
+      
+      // Show overlay on mobile
+      if (window.innerWidth <= 768) {
+        overlay.classList.add('active');
+      }
+    }
   });
   
   overlay.addEventListener('click', function() {
     sidebarNav.classList.add('collapsed');
     mainContent.classList.add('sidebar-collapsed');
+    mainHeader.classList.add('sidebar-collapsed');
     overlay.classList.remove('active');
   });
   
   // Dataset toggle
   const datasetToggle = document.getElementById('datasetToggle');
-  datasetToggle.addEventListener('click', toggleDatasetPreview);
+  datasetToggle.addEventListener('click', function() {
+    openDatasetModal();
+  });
+  
+  // Dataset modal functionality
+  const datasetModal = document.getElementById('datasetModal');
+  const datasetModalClose = document.getElementById('datasetModalClose');
+  
+  datasetModalClose.addEventListener('click', closeDatasetModal);
+  
+  datasetModal.addEventListener('click', function(e) {
+    if (e.target === this) {
+      closeDatasetModal();
+    }
+  });
   
   // Auto-resize textarea
   const queryInput = document.getElementById('queryInput');
@@ -1206,16 +1374,118 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // UI Functions
 function toggleDatasetPreview() {
-  const preview = document.getElementById('datasetPreview');
-  const toggle = document.getElementById('datasetToggle');
+  // Legacy function - now opens modal
+  openDatasetModal();
+}
+
+function openDatasetModal() {
+  const modal = document.getElementById('datasetModal');
+  const modalBody = document.getElementById('datasetModalBody');
   
-  if (preview.classList.contains('hidden')) {
-    preview.classList.remove('hidden');
-    toggle.textContent = '📊 Hide Dataset';
-  } else {
-    preview.classList.add('hidden');
-    toggle.textContent = '📊 Show Dataset';
+  // Reset content
+  modalBody.innerHTML = '<div class="dataset-loading">🔄 Loading dataset...</div>';
+  
+  // Show modal
+  modal.style.display = 'block';
+  
+  // Load full dataset
+  loadFullDataset(0);
+}
+
+function closeDatasetModal() {
+  document.getElementById('datasetModal').style.display = 'none';
+}
+
+let currentDatasetOffset = 0;
+let hasMoreData = true;
+let isLoadingDataset = false;
+
+function loadFullDataset(offset = 0, append = false) {
+  if (isLoadingDataset) return;
+  
+  isLoadingDataset = true;
+  const modalBody = document.getElementById('datasetModalBody');
+  
+  if (!append) {
+    modalBody.innerHTML = '<div class="dataset-loading">🔄 Loading dataset...</div>';
   }
+  
+  fetch(`/full_dataset/?limit=500&offset=${offset}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        modalBody.innerHTML = `<div class="dataset-loading" style="color: var(--error-text);">❌ ${data.error}</div>`;
+        return;
+      }
+      
+      if (!append) {
+        // Create table structure
+        let tableHTML = `
+          <table class="full-dataset-table">
+            <thead>
+              <tr>
+                ${data.columns.map(col => `<th>${col}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody id="datasetTableBody">
+            </tbody>
+          </table>
+        `;
+        modalBody.innerHTML = tableHTML;
+      }
+      
+      // Add rows to table
+      const tbody = document.getElementById('datasetTableBody');
+      data.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = data.columns.map(col => {
+          const value = row[col];
+          const displayValue = value !== null && value !== undefined ? String(value) : '';
+          return `<td title="${displayValue}">${displayValue}</td>`;
+        }).join('');
+        tbody.appendChild(tr);
+      });
+      
+      currentDatasetOffset = data.offset + data.rows.length;
+      hasMoreData = data.has_more;
+      
+      // Add load more button if there's more data
+      if (hasMoreData && !document.getElementById('loadMoreBtn')) {
+        const loadMoreBtn = document.createElement('button');
+        loadMoreBtn.id = 'loadMoreBtn';
+        loadMoreBtn.className = 'load-more-btn';
+        loadMoreBtn.textContent = `Load More (${data.total_rows - currentDatasetOffset} remaining)`;
+        loadMoreBtn.onclick = () => loadFullDataset(currentDatasetOffset, true);
+        modalBody.appendChild(loadMoreBtn);
+      } else if (!hasMoreData) {
+        const existingBtn = document.getElementById('loadMoreBtn');
+        if (existingBtn) {
+          existingBtn.remove();
+        }
+        
+        // Add completion message
+        const completeMsg = document.createElement('div');
+        completeMsg.style.textAlign = 'center';
+        completeMsg.style.padding = '16px';
+        completeMsg.style.color = 'var(--text-muted)';
+        completeMsg.style.fontStyle = 'italic';
+        completeMsg.textContent = `✅ Loaded all ${data.total_rows} rows`;
+        modalBody.appendChild(completeMsg);
+      } else if (hasMoreData) {
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+          loadMoreBtn.textContent = `Load More (${data.total_rows - currentDatasetOffset} remaining)`;
+        }
+      }
+      
+    })
+    .catch(error => {
+      console.error('Error loading dataset:', error);
+      modalBody.innerHTML = '<div class="dataset-loading" style="color: var(--error-text);">❌ Failed to load dataset</div>';
+    })
+    .finally(() => {
+      isLoadingDataset = false;
+    });
 }
 
 function expandDataset() {
@@ -1414,8 +1684,13 @@ async function sendQuery() {
               <button class="chart-btn" data-type="bar">📊 Bar Chart</button>
               <button class="chart-btn" data-type="line">📈 Line Chart</button>
               <button class="chart-btn" data-type="scatter">🔵 Scatter Plot</button>
+              <button class="chart-btn" data-type="pie">🥧 Pie Chart</button>
+              <button class="chart-btn" data-type="histogram">📊 Histogram</button>
               <button class="chart-btn" data-type="box">📦 Box Plot</button>
+              <button class="chart-btn" data-type="violin">🎻 Violin Plot</button>
               <button class="chart-btn" data-type="heatmap">🌡️ Heatmap</button>
+              <button class="chart-btn" data-type="density">🌊 Density Plot</button>
+              <button class="chart-btn" data-type="pair">🔗 Pair Plot</button>
             </div>
             <div class="chart-result" style="display: none;">
               <div class="chart-image"></div>
