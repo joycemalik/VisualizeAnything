@@ -5,6 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Datanaut.ai - Data Analytics</title>
   <style>
+      /* For Chrome, Edge, Safari */
+    ::-webkit-scrollbar {
+      height: 8px;   /* horizontal scrollbar height */
+      width: 9px;    /* vertical scrollbar width */
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent; /* or var(--bg-secondary) */
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #c3c3eeff;         /* scrollbar handle */
+      border-radius: 0px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
     * {
       margin: 0;
       padding: 0;
@@ -12,46 +30,58 @@
     }
 
     body {
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-      background: #ffffff;
+      overflow: hidden;
+      font-family:"Inter","ui-sans-serif","system-ui","-apple-system","Segoe UI",sans-serif;
+      background: #000000ff;
       color: #000000;
       line-height: 1.6;
       min-height: 100vh;
+      display: flex;
+      justify-content: center; /* horizontally center container */
+      align-items: flex-start; /* start from top, but we'll offset heading */
+      flex-direction: column;
     }
 
     .container {
+      width: 100%;
       max-width: 800px;
-      margin: 0 auto;
-      padding: 80px 40px;
+      margin: 40px auto; /* Adjust this value to control top margin */
+      padding: 40px 20px;
       text-align: center;
     }
 
     h1 {
       font-size: 48px;
-      font-weight: 300;
+      font-weight: 450;
       color: #000000;
-      margin-bottom: 16px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
+      display: inline-block;
+    }
+
+    h1 span {
+      color:#7c66f8ff;
+    }
+
+    /* Center heading block in viewport */
+    .header-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      /* The min-height property was removed to reduce the gap */
     }
 
     .subtitle {
-      font-size: 16px;
-      color: #666666;
-      margin-bottom: 80px;
+      font-style: italic;
+      font-size: 18px;
+      color: #dededeff;
+      margin-top: 5px;
+      margin-bottom: 22px;
       font-weight: 300;
       letter-spacing: 1px;
     }
 
     .upload-section {
-      border: 2px solid #000000;
-      padding: 60px 40px;
       margin-bottom: 60px;
-      transition: all 0.2s ease;
-    }
-
-    .upload-section:hover {
-      background: #f8f8f8;
     }
 
     input[type="file"] {
@@ -64,13 +94,12 @@
       font-size: 14px;
       font-weight: 400;
       color: #ffffff;
-      background: #000000;
+      background: #7c66f8ff;
       border: 2px solid #000000;
       cursor: pointer;
       transition: all 0.2s ease;
       text-decoration: none;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.7px;
       font-family: inherit;
     }
 
@@ -80,78 +109,43 @@
     }
 
     .dataset-list {
-      border: 1px solid #000000;
+      border: 1px solid #ffffffff;
       padding: 40px;
       text-align: left;
-      margin-top: 40px;
+      margin-top: -22px;
+    }
+    .para{
+      color: #dededeff;
+      font-size: 15px;
+      font-weight: 400;
+      letter-spacing: 1px;
     }
 
     .dataset-list h2 {
-      color: #000000;
+      color: #ffffff;
       margin-bottom: 30px;
       font-size: 18px;
       font-weight: 400;
       text-transform: uppercase;
       letter-spacing: 1px;
-      border-bottom: 1px solid #000000;
+      border-bottom: 1px solid #ffffffff;
       padding-bottom: 10px;
     }
 
-    .dataset-item {
-      padding: 16px 0;
-      border-bottom: 1px solid #e0e0e0;
-      transition: all 0.2s ease;
-    }
-
-    .dataset-item:last-child {
-      border-bottom: none;
-    }
-
-    .dataset-item:hover {
-      background: #f8f8f8;
-      padding-left: 16px;
-    }
-
-    .dataset-item a {
-      text-decoration: none;
-      color: #000000;
-      font-weight: 400;
-      font-size: 14px;
-      letter-spacing: 0.5px;
-    }
-
-    .dataset-item a:hover {
-      text-decoration: underline;
-    }
-
-    .no-datasets {
-      color: #666666;
-      font-style: italic;
-      text-align: center;
-      padding: 40px 0;
-    }
-
     @media (max-width: 768px) {
-      .container {
-        padding: 40px 20px;
-      }
-      
-      h1 {
-        font-size: 32px;
-      }
-      
-      .upload-section {
-        padding: 40px 20px;
-      }
+      h1 { font-size: 32px; }
+      .dataset-list { padding: 20px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Datanaut</h1>
-    <p class="subtitle">Data Analytics Platform</p>
 
-    <!-- Upload Section -->
+    <div class="header-block">
+      <h1 style="font-size: 80px; color: #ffffff;">Datanaut<span>.ai</span></h1>
+      <p class="subtitle">~Exploratory Data Analytics Tool~</p>
+    </div>
+
     <div class="upload-section">
       <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
         {% csrf_token %}
@@ -160,21 +154,27 @@
       </form>
     </div>
 
-    <!-- Dataset List -->
     <div class="dataset-list">
-      <h2>Datasets</h2>
-      {% if datasets %}
-        {% for dataset in datasets %}
-          <div class="dataset-item">
-            <a href="{% url 'dataset_preview' dataset.id %}">
-              {{ dataset.name }}
-            </a>
-          </div>
-        {% endfor %}
-      {% else %}
-        <p class="no-datasets">No datasets uploaded yet.</p>
-      {% endif %}
+      <h2>About</h2>
+      <p class="para">
+        <strong>Datanaut.ai</strong> is a smart <em>data analytics assistant</em> that lets you 
+        upload datasets and instantly explore insights, run queries in plain English, 
+        and auto-generate visualizations.
+      </p>
+      <p  class="para" style="margin: 5px 0; padding-left: 15px; line-height: 1.6;">
+        <br>→Upload your <strong>CSV, Excel, or JSON</strong> datasets easily.
+        <br>→let a quick <strong>preview of your data</strong> (columns, rows, schema).
+        <br>→Ask questions in <em>English</em> and let the app generate SQL queries & charts.
+        <br>→Perform <strong>EDA</strong> with automated summaries, profiling, and insights.
+        <br>→Save your analysis as <strong>PDF, PPTX, or images</strong> to share with your team.
+      </p>
+      <p style="margin-top: 20px; text-align: center; color: #fff;">
+        ~Built by <strong>SHARIK & JOYCE</strong>
+      </p>
     </div>
+
+      
+
   </div>
 </body>
 </html>
