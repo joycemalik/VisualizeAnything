@@ -10,8 +10,12 @@ from dotenv import load_dotenv
 from django.contrib import messages
 import time
 from datetime import datetime, timezone, timedelta
+from xhtml2pdf import pisa
 import json
-
+import pdfkit, io
+from pptx import Presentation
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
 import io
 from supabase import create_client
 import matplotlib
@@ -63,13 +67,16 @@ def upload_dataset(request):
     if request.method == "POST" and request.FILES.get("file"):
         file = request.FILES["file"]
 
-        # Create a unique filename for Supabase
+        # Create a unique filename for Supabase (stored name)
         session_key = request.session.session_key or str(int(time.time()))
         timestamp = int(time.time())
-        filename = f"{session_key}_{timestamp}_{file.name}"
-        path_in_bucket = f"sessions/{filename}"
+        stored_name = f"{session_key}_{timestamp}_{file.name}"
+        path_in_bucket = f"sessions/{stored_name}"
 
-        print(f"DEBUG: Uploading file: {filename}")
+        # Keep original name for UI
+        display_name = file.name  
+
+        print(f"DEBUG: Uploading file: {stored_name}")
 
         try:
             # Read file data as bytes
@@ -90,12 +97,15 @@ def upload_dataset(request):
             )
             print(f"✅ Uploaded to Supabase: {path_in_bucket}")
 
-            # Store Supabase path in session for later use
+            # Store both in session
             TEMP_FILES[request.session.session_key] = path_in_bucket
             request.session["dataset_path"] = path_in_bucket
+            request.session["dataset_display_name"] = display_name  
 
-            messages.success(request, f"File uploaded successfully: {file.name}")
-            return redirect(reverse("dataset_preview", args=[filename]))
+            messages.success(request, f"File uploaded successfully: {display_name}")
+
+            # Redirect using stored name (backend ID), but keep display_name in session
+            return redirect(reverse("dataset_preview", args=[stored_name]))
 
         except Exception as e:
             print(f"❌ Failed to upload to Supabase: {e}")
@@ -103,6 +113,7 @@ def upload_dataset(request):
             return redirect("index")
 
     return redirect("index")
+
 
 
 def generate_data_profile(df):
@@ -272,7 +283,7 @@ def analyze_dataset_context(df):
 
 
 def auto_visualize_dataset(request):
-    """Generate automatic visualizations for the dataset"""
+    """Generate automatic visualizations for the dataset and save each to session"""
     if request.method == 'POST':
         path_in_bucket = request.session.get("dataset_path")
         
@@ -293,12 +304,20 @@ def auto_visualize_dataset(request):
                 try:
                     chart_data = generate_auto_chart(df, viz['type'], viz['description'])
                     if chart_data:
+                        # Save the visualization to session for report builder
+                        save_visualization(
+                            request,
+                            f"{viz['type'].title()} Chart",
+                            chart_data['image'],
+                            chart_data['explanation']
+                        )
                         charts.append({
                             'type': viz['type'],
                             'description': viz['description'],
                             'reason': viz['reason'],
                             'image': chart_data['image'],
-                            'explanation': chart_data['explanation']
+                            'explanation': chart_data['explanation'],
+                            'chart_title': f"{viz['type'].title()} Chart"
                         })
                 except Exception as e:
                     print(f"Failed to generate {viz['type']} chart: {e}")
@@ -314,7 +333,6 @@ def auto_visualize_dataset(request):
             return JsonResponse({'error': f'Auto-visualization failed: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Only POST method allowed'}, status=405)
-
 
 def generate_auto_chart(df, chart_type, description):
     """Generate automatic charts based on data analysis"""
@@ -388,6 +406,7 @@ def generate_auto_chart(df, chart_type, description):
 
 def dataset_preview(request, dataset_name):
     path_in_bucket = request.session.get("dataset_path")
+    display_name = request.session.get("dataset_display_name", dataset_name)  # fallback
     print(f"DEBUG: Preview session dataset_path: {path_in_bucket}")  # DEBUG
 
     if not path_in_bucket:
@@ -398,30 +417,37 @@ def dataset_preview(request, dataset_name):
         res = supabase.storage.from_(SUPABASE_BUCKET).download(path_in_bucket)
         df = pd.read_csv(io.BytesIO(res))
         print(f"✅ Loaded dataset from Supabase: {dataset_name}")  # DEBUG
-        
+
         # Generate comprehensive data profile
         data_profile = generate_data_profile(df)
-        
+
         # Analyze dataset context and provide suggestions
         analysis = analyze_dataset_context(df)
-        
+
     except Exception as e:
         df = pd.DataFrame()
         analysis = None
         data_profile = None
         print(f"❌ Failed to load dataset from Supabase: {e}")  # DEBUG
-        messages.error(request, f"Dataset not found. It may have been cleaned up or your session expired. Please upload the dataset again.")
+        messages.error(
+            request,
+            "Dataset not found. It may have been cleaned up or your session expired. Please upload the dataset again."
+        )
         return redirect("index")
 
     context = {
-        "dataset": {"name": dataset_name, "original_filename": dataset_name},
+        "dataset": {
+            "name": dataset_name,            # internal Supabase name
+            "display_name": display_name     # clean original filename
+        },
         "columns": df.columns.tolist() if not df.empty else [],
         "preview_rows": df.head(5).values.tolist() if not df.empty else [],
         "analysis": analysis,
-        "data_profile": data_profile,  # Add comprehensive data profile
+        "data_profile": data_profile,
     }
 
     return render(request, "dataset_preview.html", context)
+
 
 
 def full_dataset(request):
@@ -470,6 +496,7 @@ def full_dataset(request):
     except Exception as e:
         print(f"❌ full_dataset failed: {e}")  # DEBUG
         return JsonResponse({"error": f"Failed to read dataset: {str(e)}"}, status=500)
+
 
 
 def run_query(request, dataset_name):
@@ -672,6 +699,16 @@ def run_query(request, dataset_name):
         # Add visualization suggestions
         visualization_suggestion = suggest_visualization_type(result_df, sql_query)
 
+        # ---- Save to session for report builder ----
+        save_query_result(
+            request,
+            user_input,
+            sql_query,
+            result_data,
+            visualization_suggestion
+        )
+        # -------------------------------------------
+
         return JsonResponse({
             "query": sql_query, 
             "result": result_data,
@@ -690,6 +727,111 @@ def run_query(request, dataset_name):
 
     finally:
         conn.close()
+
+
+
+def save_report(request, format):
+    body = json.loads(request.body)
+    html_content = body.get("html", "")
+
+    if format == "pdf":
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer)
+        p.drawString(100, 750, html_content)  # Simple text export
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename=report.pdf'
+        return response
+        
+    elif format == "pptx":
+        # Simple PPTX export (basic plain text slide)
+        prs = Presentation()
+        slide_layout = prs.slide_layouts[5]
+        slide = prs.slides.add_slide(slide_layout)
+        textbox = slide.shapes.add_textbox(100, 100, 500, 500)
+        textbox.text = html_content
+        buffer = io.BytesIO()
+        prs.save(buffer)
+        response = HttpResponse(buffer.getvalue(), content_type="application/vnd.openxmlformats-officedocument.presentation.presentation")
+        response["Content-Disposition"] = "attachment; filename=report.pptx"
+        return response
+
+    elif format in ["jpg", "png"]:
+        # Image export using html2image (optional, install html2image if needed)
+        from html2image import Html2Image
+        hti = Html2Image()
+        ext = "png" if format == "png" else "jpg"
+        output_path = f"report.{ext}"
+        hti.screenshot(html_str=html_content, save_as=output_path)
+        with open(output_path, "rb") as f:
+            response = HttpResponse(f.read(), content_type=f"image/{ext}")
+            response["Content-Disposition"] = f"attachment; filename=report.{ext}"
+            return response
+
+    return HttpResponse("Invalid format", status=400)
+
+
+# ... all your imports ...
+
+def save_chat_message(request, sender, content):
+    """Save a chat message (user or assistant) to session."""
+    chat_history = request.session.get('chat_history', [])
+    chat_history.append({
+        'type': 'chat_message',
+        'sender': sender,
+        'content': content,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    request.session['chat_history'] = chat_history
+
+def save_visualization(request, chart_title, image_url, explanation):
+    """Save a visualization block to session."""
+    visualizations = request.session.get('visualizations', [])
+    visualizations.append({
+        'type': 'visualization',
+        'chart_title': chart_title,
+        'image_url': image_url,
+        'explanation': explanation,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    request.session['visualizations'] = visualizations
+
+def save_query_result(request, user_input, sql_query, result_data, visualization_suggestion):
+    """Save a query history block to session."""
+    chat_history = request.session.get('chat_history', [])
+    chat_history.append({
+        'type': 'query',
+        'user_input': user_input,
+        'sql_query': sql_query,
+        'result_summary': {
+            'rows': len(result_data),
+            'columns': list(result_data[0].keys()) if result_data else [],
+        },
+        'visualization_suggestion': visualization_suggestion,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    request.session['chat_history'] = chat_history
+
+
+
+def report_builder(request):
+    chat_history = request.session.get("chat_history", [])
+    visualizations = request.session.get("visualizations", [])
+    tables = request.session.get("tables", [])  # Add this
+
+    # Compose all blocks in order (you may want to save the block order in session)
+    blocks = []
+    blocks.extend(chat_history)
+    blocks.extend(visualizations)
+    blocks.extend(tables)
+    # Optionally, sort by timestamp or order field
+
+    return render(request, "report_builder.html", {
+        "blocks": blocks,
+        # pass additional context as needed
+    })
 
 
 def suggest_visualization_type(df, query):
@@ -712,7 +854,7 @@ def suggest_visualization_type(df, query):
 
 
 def generate_chart(request):
-    """Generate chart using Seaborn based on query results"""
+    """Generate chart using Seaborn based on query results and save to session for report builder"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -733,8 +875,8 @@ def generate_chart(request):
             # Create figure
             fig, ax = plt.subplots(figsize=(12, 8))
             
-            # Generate chart based on type
             chart_explanation = ""
+            skip_normal_processing = False
             
             if chart_type == 'scatter':
                 if len(df.select_dtypes(include=[np.number]).columns) >= 2:
@@ -749,12 +891,11 @@ def generate_chart(request):
             elif chart_type == 'box':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) > 0:
-                    # If there are categorical columns, use them for grouping
                     cat_cols = df.select_dtypes(include=['object']).columns
                     if len(cat_cols) > 0 and len(numeric_cols) > 0:
                         sns.boxplot(data=df, x=cat_cols[0], y=numeric_cols[0], ax=ax)
                         ax.set_title(f'Box Plot: {numeric_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
-                        chart_explanation = f"This box plot shows the distribution of {numeric_cols[0]} across different categories of {cat_cols[0]}. The box shows the quartiles, and whiskers show the range."
+                        chart_explanation = f"This box plot shows the distribution of {numeric_cols[0]} across different categories of {cat_cols[0]}."
                     else:
                         sns.boxplot(data=df[numeric_cols], ax=ax)
                         ax.set_title('Box Plot of Numeric Variables', fontsize=16, fontweight='bold')
@@ -775,18 +916,15 @@ def generate_chart(request):
                     
             elif chart_type == 'bar':
                 if len(df.columns) >= 2:
-                    # Try to find categorical and numeric columns
                     cat_cols = df.select_dtypes(include=['object']).columns
                     num_cols = df.select_dtypes(include=[np.number]).columns
                     
                     if len(cat_cols) > 0 and len(num_cols) > 0:
-                        # Group by categorical column and sum numeric values
                         grouped = df.groupby(cat_cols[0])[num_cols[0]].sum().reset_index()
                         sns.barplot(data=grouped, x=cat_cols[0], y=num_cols[0], ax=ax)
                         ax.set_title(f'Bar Chart: {num_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
                         chart_explanation = f"This bar chart shows the total {num_cols[0]} for each category of {cat_cols[0]}."
                     else:
-                        # Simple bar chart of first two columns
                         sns.barplot(data=df, x=df.columns[0], y=df.columns[1], ax=ax)
                         ax.set_title(f'Bar Chart: {df.columns[1]} by {df.columns[0]}', fontsize=16, fontweight='bold')
                         chart_explanation = f"This bar chart shows {df.columns[1]} values for each {df.columns[0]}."
@@ -804,12 +942,9 @@ def generate_chart(request):
             elif chart_type == 'pie':
                 cat_cols = df.select_dtypes(include=['object']).columns
                 if len(cat_cols) > 0:
-                    # Get value counts for categorical column
                     value_counts = df[cat_cols[0]].value_counts()
-                    # Limit to top 10 categories to avoid cluttered pie chart
                     if len(value_counts) > 10:
                         value_counts = value_counts.head(10)
-                    
                     colors = plt.cm.Set3(range(len(value_counts)))
                     wedges, texts, autotexts = ax.pie(value_counts.values, labels=value_counts.index, 
                                                      autopct='%1.1f%%', colors=colors, startangle=90)
@@ -847,7 +982,7 @@ def generate_chart(request):
             elif chart_type == 'density':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) > 0:
-                    for col in numeric_cols[:3]:  # Limit to first 3 numeric columns
+                    for col in numeric_cols[:3]:
                         sns.kdeplot(data=df, x=col, ax=ax, label=col)
                     ax.set_title('Density Plot of Numeric Variables', fontsize=16, fontweight='bold')
                     ax.legend()
@@ -858,52 +993,36 @@ def generate_chart(request):
             elif chart_type == 'pair':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) >= 2:
-                    # Create pair plot (this will create a new figure)
-                    plt.close()  # Close the current figure
-                    
-                    # Limit to first 4 numeric columns to avoid too large plot
+                    plt.close()
                     cols_to_plot = numeric_cols[:4]
                     pair_plot = sns.pairplot(df[cols_to_plot])
                     pair_plot.fig.suptitle('Pair Plot of Numeric Variables', y=1.02, fontsize=16, fontweight='bold')
-                    
-                    # Convert to base64
                     buffer = BytesIO()
                     pair_plot.fig.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
                     buffer.seek(0)
                     plot_data = buffer.getvalue()
                     buffer.close()
                     plt.close()
-                    
                     plot_url = base64.b64encode(plot_data).decode()
                     chart_explanation = f"This pair plot shows relationships between all numeric variables: {', '.join(cols_to_plot)}."
-                    
-                    # Skip the normal plotting process since we handled it here
                     skip_normal_processing = True
                 else:
                     return JsonResponse({'error': 'Need at least 2 numeric columns for pair plot'}, status=400)
             
-            # Only do normal processing if we didn't handle it specially (like pair plot)
-            if 'skip_normal_processing' not in locals():
-                # Rotate x-axis labels if they're long
+            if not skip_normal_processing:
                 ax.tick_params(axis='x', rotation=45)
                 plt.tight_layout()
-                
-                # Convert plot to base64 string
                 buffer = BytesIO()
                 plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
                 buffer.seek(0)
                 plot_data = buffer.getvalue()
                 buffer.close()
                 plt.close()
-                
-                # Encode to base64
                 plot_url = base64.b64encode(plot_data).decode()
             
             # Generate AI explanation using Groq
             try:
                 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-                
-                # Prepare data summary for AI
                 data_summary = {
                     'shape': df.shape,
                     'columns': list(df.columns),
@@ -911,7 +1030,6 @@ def generate_chart(request):
                     'categorical_cols': list(df.select_dtypes(include=['object']).columns),
                     'sample_data': df.head(3).to_dict('records')
                 }
-                
                 prompt = f"""
                 Analyze this {chart_type} chart and provide insights:
                 
@@ -931,19 +1049,25 @@ def generate_chart(request):
                 
                 Keep the analysis concise but insightful (2-3 paragraphs max).
                 """
-                
                 chat_completion = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
                     model="llama-3.1-8b-instant",
                     temperature=0.3,
                     max_tokens=500
                 )
-                
                 ai_explanation = chat_completion.choices[0].message.content
-                
             except Exception as e:
                 ai_explanation = f"Chart generated successfully. {chart_explanation}"
             
+            # ---- Save to session for report builder ----
+            save_visualization(
+                request,
+                f"{chart_type.title()} Chart",
+                f'data:image/png;base64,{plot_url}',
+                ai_explanation
+            )
+            # -------------------------------------------
+
             return JsonResponse({
                 'success': True,
                 'chart_image': f'data:image/png;base64,{plot_url}',
@@ -955,9 +1079,3 @@ def generate_chart(request):
             return JsonResponse({'error': f'Chart generation failed: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Only POST method allowed'}, status=405)
-    
-    # Categorical data
-    if len(df) <= 10 and len(df.columns) == 2:
-        return "pie_chart"
-    
-    return "bar_chart"

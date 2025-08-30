@@ -1,0 +1,247 @@
+{% load report_tags %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Report Builder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- You can use Bootstrap for quick styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- SortableJS for drag-and-drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        body { background: #222; color: #eee; }
+        .builder-container { max-width: 900px; margin: 32px auto; }
+        .block { background: #2c2c2c; border-radius: 8px; margin-bottom: 16px; padding: 18px 22px; box-shadow: 0 2px 8px #0002; }
+        .block.dragging { opacity: 0.6; }
+        .block-toolbar { text-align: right; margin-bottom: 8px; }
+        .draggable-handle { cursor: grab; margin-right: 8px; }
+        .editable-text { min-height: 60px; border: 1px solid #444; border-radius: 5px; background: #242424; padding: 8px; color: #eee; }
+        .block-table table { background: #262626; color: #eee; border-radius: 5px; }
+        .block-table th, .block-table td { padding: 4px 12px; border-bottom: 1px solid #444; }
+        .block-table th { background: #333; }
+        .block-visualization img { max-width: 100%; border-radius: 7px; background: #fff; }
+        .add-block-menu { margin: 24px 0; }
+        .block-toolbar button { margin-left: 8px; }
+        .export-btn { margin-top: 20px; float: right; }
+    </style>
+</head>
+<body>
+<div class="builder-container">
+    <h1 class="mb-4">Build Your Report</h1>
+    <div id="report-blocks">
+        {% for block in blocks %}
+            <div class="block" data-block-index="{{ forloop.counter0 }}" data-block-type="{{ block.type }}">
+                <div class="block-toolbar">
+                    <span class="draggable-handle">☰</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeBlock(this)">Remove</button>
+                    {% if block.type == "text" %}
+                        <button class="btn btn-sm btn-outline-primary" onclick="editTextBlock(this)">Edit</button>
+                    {% endif %}
+                </div>
+                {% if block.type == "chat_message" %}
+                    <div>
+                        <span style="font-weight:bold; color:#4fd1c5;">{{ block.sender|title }}:</span>
+                        <div style="white-space: pre-line;">{{ block.content|safe }}</div>
+                    </div>
+                {% elif block.type == "visualization" %}
+                    <div class="block-visualization">
+                        <p style="font-weight:600;">{{ block.chart_title }}</p>
+                        <img src="{{ block.image_url }}" alt="Visualization">
+                        <div class="mt-2" style="font-size: 0.98em;">{{ block.explanation|safe }}</div>
+                    </div>
+                {% elif block.type == "table" %}
+                    <div class="block-table">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    {% for col in block.columns %}
+                                        <th>{{ col }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in block.rows %}
+                                    <tr>
+                                        {% for col in block.columns %}
+                                            <td>{{ row|get_item:col }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% elif block.type == "text" %}
+                    <div class="editable-text" contenteditable="false">{{ block.content|safe }}</div>
+                {% endif %}
+            </div>
+        {% empty %}
+            <p>No blocks yet! Start building your report below.</p>
+        {% endfor %}
+    </div>
+
+    <!-- Add Block Menu -->
+    <div class="add-block-menu">
+        <button class="btn btn-success" onclick="addTextBlock()">Add Text Block</button>
+        <!-- Optionally: add button to add custom visualization/table blocks -->
+    </div>
+
+    <!-- Export -->
+    <button class="btn btn-primary export-btn" onclick="exportReport('pdf')">Export as PDF</button>
+    <button class="btn btn-outline-primary export-btn" onclick="exportReport('pptx')">Export as PPTX</button>
+    <button class="btn btn-outline-secondary export-btn" onclick="exportReport('png')">Export as PNG</button>
+</div>
+
+<!-- Modal for editing text block -->
+<div class="modal fade" id="editTextModal" tabindex="-1" aria-labelledby="editTextModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editTextModalLabel">Edit Text Block</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <textarea id="editTextContent" class="form-control" rows="6"></textarea>
+        <input type="hidden" id="editBlockIndex">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-success" onclick="saveTextEdit()">Save</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Helper for getting dict value by key in Django templates
+function get_item(obj, key) {
+    return obj[key];
+}
+
+// Drag-and-drop with SortableJS
+new Sortable(document.getElementById('report-blocks'), {
+    animation: 200,
+    handle: '.draggable-handle',
+    onEnd: function (evt) {
+        saveBlockOrder();
+    }
+});
+
+// Remove block
+function removeBlock(btn) {
+    const block = btn.closest('.block');
+    block.remove();
+    saveBlockOrder();
+}
+
+// Add text block
+function addTextBlock() {
+    const blocks = document.getElementById('report-blocks');
+    // Default new block content
+    const idx = blocks.children.length;
+    const div = document.createElement('div');
+    div.className = 'block';
+    div.setAttribute('data-block-index', idx);
+    div.setAttribute('data-block-type', 'text');
+    div.innerHTML = `
+        <div class="block-toolbar">
+            <span class="draggable-handle">☰</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="removeBlock(this)">Remove</button>
+            <button class="btn btn-sm btn-outline-primary" onclick="editTextBlock(this)">Edit</button>
+        </div>
+        <div class="editable-text" contenteditable="false">Click "Edit" to add text...</div>
+    `;
+    blocks.appendChild(div);
+    saveBlockOrder();
+}
+
+// Edit text block (open modal)
+function editTextBlock(btn) {
+    const block = btn.closest('.block');
+    const editable = block.querySelector('.editable-text');
+    document.getElementById('editTextContent').value = editable.innerHTML;
+    document.getElementById('editBlockIndex').value = block.getAttribute('data-block-index');
+    const modal = new bootstrap.Modal(document.getElementById('editTextModal'));
+    modal.show();
+}
+
+// Save text edit
+function saveTextEdit() {
+    const idx = document.getElementById('editBlockIndex').value;
+    const content = document.getElementById('editTextContent').value;
+    const block = document.querySelector(`.block[data-block-index="${idx}"]`);
+    if (block) {
+        block.querySelector('.editable-text').innerHTML = content;
+        saveBlockOrder();
+    }
+    bootstrap.Modal.getInstance(document.getElementById('editTextModal')).hide();
+}
+
+// Save/reorder blocks (serialize and send to backend)
+function saveBlockOrder() {
+    // Collect all blocks
+    const blocks = [];
+    document.querySelectorAll('#report-blocks .block').forEach((block, idx) => {
+        const type = block.getAttribute('data-block-type');
+        let data = {};
+        if (type === 'chat_message') {
+            data = {
+                type: type,
+                sender: block.querySelector('span').innerText.replace(':',''),
+                content: block.querySelector('div[style]').innerHTML
+            };
+        } else if (type === 'visualization') {
+            data = {
+                type: type,
+                chart_title: block.querySelector('.block-visualization p').innerText,
+                image_url: block.querySelector('img').src,
+                explanation: block.querySelector('.block-visualization div').innerHTML
+            };
+        } else if (type === 'table') {
+            // Table serialization: you may need to add more robust extraction if you support adding custom tables
+            data = { type: type };
+        } else if (type === 'text') {
+            data = {
+                type: type,
+                content: block.querySelector('.editable-text').innerHTML
+            };
+        }
+        blocks.push(data);
+    });
+    // Send to backend via AJAX to save in session (optional, implement endpoint in views.py)
+    fetch('/save_report_blocks/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ blocks: blocks })
+    });
+}
+
+// Export report
+function exportReport(format) {
+    // Collect report HTML (you may want to extract only the blocks for export)
+    const html_content = document.getElementById('report-blocks').innerHTML;
+    fetch(`/save_report/${format}/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ html: html_content })
+    }).then(resp => {
+        if (resp.ok) return resp.blob();
+        else throw new Error("Export failed");
+    }).then(blob => {
+        // Download the file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+    }).catch(() => {
+        alert("Failed to export report.");
+    });
+}
+</script>
+</body>
+</html>
