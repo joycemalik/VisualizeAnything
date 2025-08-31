@@ -31,6 +31,9 @@
       --shadow-lg: rgba(0,0,0,0.1);
       --message-user-bg: #10a37f;
       --message-bot-bg: #f7f7f8;
+      .dataset-icon {
+        filter: invert(1) brightness(0);
+      }
     }
 
     [data-theme="dark"] {
@@ -58,6 +61,9 @@
       --shadow-lg: rgba(0,0,0,0.5);
       --message-user-bg: #2f2f2f;
       --message-bot-bg: transparent;
+      .dataset-icon {
+        filter: none;
+      }
     }
 
     * { 
@@ -85,7 +91,7 @@
     }
     
     body {
-      font-family: "Söhne", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", sans-serif;
+      font-family: "Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
       transition: background-color 0.2s ease, color 0.2s ease;
@@ -128,6 +134,23 @@
       font-weight: 600;
       color: var(--text-primary);
       margin-bottom: 8px;
+    }
+    .dataset-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;  /* space between icon and name */
+    }
+
+    .dataset-icon {
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+
+    .dataset-meta {
+      font-size: 12px;
+      margin-top: 4px;
+      color: var(--text-muted);
     }
 
     .dataset-info {
@@ -991,7 +1014,10 @@
       <div class="sidebar-header">
         <h1>Datanaut<span style="color: #7c66f8ff;">.ai</span></h1>
         <div class="dataset-info">
-          <strong> {{ dataset.display_name }}</strong>
+          <div class="dataset-title">
+            <img src="/static/folder.png" alt="Dataset Icon" class="dataset-icon" style="width: 20px;">
+            <strong> {{ dataset.display_name }}</strong>
+          </div>
           <div style="font-size: 12px; margin-top: 4px; color: var(--text-muted);">
             {{ columns|length }} columns • {{ preview_rows|length }}+ rows
           </div>
@@ -1143,7 +1169,13 @@
       <div class="main-header">
         <button class="control-btn" id="sidebarToggle">☰</button>
         <div class="header-controls">
-          <button onclick="openReportBuilder()" class="control-btn">Save Report</button>
+          <button onclick="openReportBuilder()" class="control-btn" 
+                  style="display:flex; align-items:center; gap:6px; 
+                  padding:8px 12px;font-size:14px;">
+            <img src="/static/save.png"  class="dataset-icon" alt="Save" 
+                style="width:16px; height:16px; object-fit:contain;">
+            Save Report
+          </button>
           <button class="control-btn" id="datasetToggle">Dataset</button>
           <button class="theme-toggle" id="themeToggle">🌙</button>
         </div>
@@ -1263,8 +1295,12 @@
   <div id="datasetModal" class="dataset-modal">
     <div class="dataset-modal-content">
       <div class="dataset-modal-header">
-        <div class="dataset-modal-title">Full Dataset: {{ dataset.display_name }}</div>
-        <span class="dataset-modal-close" id="datasetModalClose">&times;</span>
+        <div class="dataset-title">
+            <img src="/static/folder.png" alt="Dataset Icon" class="dataset-icon" style="width: 20px;">
+          <div class="dataset-modal-title">Full Dataset: {{ dataset.display_name }}</div>
+          <span class="dataset-modal-close" id="datasetModalClose">&times;</span>
+        </div>
+        
       </div>
       <div class="dataset-modal-body" id="datasetModalBody">
         <div class="dataset-loading">
