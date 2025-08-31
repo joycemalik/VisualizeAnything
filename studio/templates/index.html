@@ -1,3 +1,4 @@
+{%load static%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,177 +6,260 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Datanaut.ai - Data Analytics</title>
   <style>
-      /* For Chrome, Edge, Safari */
     ::-webkit-scrollbar {
-      height: 8px;   /* horizontal scrollbar height */
-      width: 9px;    /* vertical scrollbar width */
+      height: 8px;
+      width: 9px;
     }
 
     ::-webkit-scrollbar-track {
-      background: transparent; /* or var(--bg-secondary) */
+      background: transparent;
     }
 
     ::-webkit-scrollbar-thumb {
-      background: #c3c3eeff;         /* scrollbar handle */
+      background: #c3c3eeff;
       border-radius: 0px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
       background: #888;
     }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
 
     body {
-      overflow: hidden;
-      font-family:"Inter","ui-sans-serif","system-ui","-apple-system","Segoe UI",sans-serif;
-      background: #000000ff;
-      color: #000000;
+      font-family: "Inter", sans-serif;
+      background: #0f0f0f;
+      color: #f0f0f0;
+      margin: 0;
+      padding: 0;
       line-height: 1.6;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center; /* horizontally center container */
-      align-items: flex-start; /* start from top, but we'll offset heading */
-      flex-direction: column;
     }
 
     .container {
       width: 100%;
-      max-width: 800px;
-      margin: 40px auto; /* Adjust this value to control top margin */
-      padding: 40px 20px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 60px 20px;
       text-align: center;
     }
 
-    h1 {
-      font-size: 48px;
-      font-weight: 450;
-      color: #000000;
+    /* Floating heading animation */
+    @keyframes float {
+      0%   { transform: translateY(0px); }
+      50%  { transform: translateY(-12px); }
+      100% { transform: translateY(0px); }
+    }
+
+    /* Header */
+    .header-block h1 {
+      font-size: 70px;
+      font-weight: 400;
+      margin-bottom: 0px;
+      color: #fff;
       display: inline-block;
+      animation: float 4s ease-in-out infinite;
     }
-
-    h1 span {
-      color:#7c66f8ff;
-    }
-
-    /* Center heading block in viewport */
-    .header-block {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      /* The min-height property was removed to reduce the gap */
-    }
-
+    .header-block h1 span { color: #7c66f8; }
     .subtitle {
-      font-style: italic;
-      font-size: 18px;
-      color: #dededeff;
-      margin-top: 5px;
-      margin-bottom: 22px;
-      font-weight: 300;
-      letter-spacing: 1px;
+      font-size: 17px;
+      color: #cfcfcf;
+      margin-bottom: 50px;
+      margin-top: 0px;
     }
 
-    .upload-section {
-      margin-bottom: 60px;
-    }
-
-    input[type="file"] {
-      display: none;
-    }
-
+    /* Upload */
     .btn {
       display: inline-block;
-      padding: 16px 32px;
-      font-size: 14px;
-      font-weight: 400;
-      color: #ffffff;
-      background: #7c66f8ff;
-      border: 2px solid #000000;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-decoration: none;
-      letter-spacing: 0.7px;
-      font-family: inherit;
-    }
-
-    .btn:hover {
-      background: #ffffff;
-      color: #000000;
-    }
-
-    .dataset-list {
-      border: 1px solid #ffffffff;
-      padding: 40px;
-      text-align: left;
-      margin-top: -22px;
-    }
-    .para{
-      color: #dededeff;
+      padding: 14px 36px;
       font-size: 15px;
-      font-weight: 400;
+      font-weight: 450;
+      color: #fff;
+      background: #7c66f8;
+      border: none;
+      border-radius: 0px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
       letter-spacing: 1px;
     }
+    .btn:hover {
+      background: #000;
+      transform: translateY(-2px);
+      border: 1px solid #fff;
+    }
 
-    .dataset-list h2 {
-      color: #ffffff;
+    input[type="file"] { display: none; }
+
+    /* Feature cards */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-top: 40px;
+    }
+
+    .feature-card {
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 0px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    }
+
+    .feature-card:hover {
+      border: 1px solid #fff;
+      transform: translateY(-5px);
+    }
+
+    .feature-icon-wrapper {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #2b2b2b;
+      margin: 0 auto 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .feature-icon-wrapper img {
+      width: 70%;
+      height: 70%;
+      object-fit: contain;
+    }
+
+    /* About */
+    .about-section {
+      background: #181818;
+      border-radius: 0px;
+      padding: 15px 40px;
+      margin-top: 50px;
+      text-align: center;
+      border: 1px solid #535353ff;
+      transition: all 0.3s ease;
+    }
+    .about-section:hover{
+      border: 1px solid #fff;
+    }
+    .about-header {
       margin-bottom: 30px;
-      font-size: 18px;
-      font-weight: 400;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      border-bottom: 1px solid #ffffffff;
-      padding-bottom: 10px;
+    }
+    .about-header h2 {
+      font-weight: 300;
+      color: #fff;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    .about-divider {
+      width: 60px;
+      height: 3px;
+      background: #7c66f8;
+      margin: 0 auto;
+      border-radius: 2px;
+    }
+    .about-intro {
+      font-size: 16px;
+      color: #d0d0d0;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+
+    /* Credits */
+    .credits {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 14px;
+      color: #aaa;
+    }
+    .credits a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.3s ease;
+    }
+    .credits a:hover {
+      color: #a178ff;
     }
 
     @media (max-width: 768px) {
-      h1 { font-size: 32px; }
-      .dataset-list { padding: 20px; }
+      .header-block h1 { font-size: 48px; }
+      .about-section { padding: 30px 20px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
 
+    <!-- Header -->
     <div class="header-block">
-      <h1 style="font-size: 80px; color: #ffffff;">Datanaut<span>.ai</span></h1>
-      <p class="subtitle">~Exploratory Data Analytics Tool~</p>
+      <h1>Datanaut<span>.ai</span></h1>
+      <p class="subtitle">Exploratory Data Analytics Tool</p>
     </div>
 
-    <div class="upload-section">
-      <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
-        {% csrf_token %}
-        <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
-        <label for="fileInput" class="btn">Upload Dataset</label>
-      </form>
-    </div>
+    <!-- Upload -->
+    <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
+      {% csrf_token %}
+      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
+      <label for="fileInput" class="btn">Upload Dataset</label>
+    </form>
 
-    <div class="dataset-list">
-      <h2>About</h2>
-      <p class="para">
-        <strong>Datanaut.ai</strong> is a smart <em>data analytics assistant</em> that lets you 
-        upload datasets and instantly explore insights, run queries in plain English, 
-        and auto-generate visualizations.
+    <!-- About Section -->
+    <div class="about-section">
+      <div class="about-header">
+        <h2>About</h2>
+        <div class="about-divider"></div>
+      </div>
+      
+      <p class="about-intro">
+        <span style=" font-weight:500; color: #fff;">Datanaut.ai</span> is your smart <em>data analytics assistant</em>. 
+        Upload your datasets, uncover insights instantly, and make informed decisions effortlessly. 
+        It’s designed to help everyone from data enthusiasts to business leaders make sense of data quickly.
       </p>
-      <p  class="para" style="margin: 5px 0; padding-left: 15px; line-height: 1.6;">
-        <br>→Upload your <strong>CSV, Excel, or JSON</strong> datasets easily.
-        <br>→let a quick <strong>preview of your data</strong> (columns, rows, schema).
-        <br>→Ask questions in <em>English</em> and let the app generate SQL queries & charts.
-        <br>→Perform <strong>EDA</strong> with automated summaries, profiling, and insights.
-        <br>→Save your analysis as <strong>PDF, PPTX, or images</strong> to share with your team.
-      </p>
-      <p style="margin-top: 20px; text-align: center; color: #fff;">
-        ~Built by 
-        <strong>
-          <a href="https://www.linkedin.com/in/sharik-hassan/" style="color: #fff; text-decoration: none;">SHARIK</a> 
-          & 
-          <a href="https://www.linkedin.com/in/joycemalik/" style="color: #fff; text-decoration: none;">JOYCE</a>
-        </strong>
-      </p>
+
+      <!-- Main Feature Cards inside About -->
+      <div class="features">
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <img src="{% static 'folder.png' %}" alt="Upload Icon" class="feature-icon">
+          </div>
+          <h3>Smart Upload</h3>
+          <p>CSV, Excel, JSON support with automatic schema detection</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <img src="{% static 'chart.png' %}" alt="Insights Icon" class="feature-icon">
+          </div>
+          <h3>Instant Insights</h3>
+          <p>Auto-generated visualizations and statistical summaries</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <img src="{% static 'language.png' %}" alt="Chat Icon" class="feature-icon">
+          </div>
+          <h3>Plain English</h3>
+          <p>Ask questions naturally and get SQL queries generated</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <img src="{% static 'pdf.png' %}" alt="Export Icon" class="feature-icon">
+          </div>
+          <h3>Export Ready</h3>
+          <p>Save analysis as PDF, PPTX, or high-quality images</p>
+        </div>
+      </div>
+
+      <!-- Credits -->
+      <div class="credits">
+        <p style="font-size: 15px;">
+          Built by 
+          <a href="https://www.linkedin.com/in/sharik-hassan/" target="_blank">SHARIK</a>
+          &amp; 
+          <a href="https://www.linkedin.com/in/joycemalik/" target="_blank">JOYCE</a>
+        </p>
+      </div>
     </div>
 
   </div>
