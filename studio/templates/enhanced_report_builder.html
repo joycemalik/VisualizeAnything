@@ -1,0 +1,1096 @@
+{% load report_tags %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Enhanced Report Builder - {{ dataset_name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- External Libraries -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary-color: #7059f2;
+            --secondary-color: #f8f9fa;
+            --dark-bg: #1a1a1a;
+            --card-bg: #2c2c2c;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --border-color: #404040;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+        }
+
+        body {
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+        }
+
+        .main-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 300px;
+            background: var(--card-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar h4 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .tool-section {
+            margin-bottom: 30px;
+        }
+
+        .tool-section h6 {
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+
+        .tool-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            background: var(--dark-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .tool-btn:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .tool-btn i {
+            margin-right: 8px;
+            width: 16px;
+            text-align: center;
+        }
+
+        /* Main Content Area */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content-header {
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .content-header h2 {
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-export {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            border-radius: 6px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-export:hover {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        /* Report Canvas */
+        .report-canvas {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            background: #f5f5f5;
+        }
+
+        .report-page {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            min-height: 1000px;
+            padding: 60px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            position: relative;
+        }
+
+        /* Block Styles */
+        .report-block {
+            margin-bottom: 20px;
+            position: relative;
+            border: 2px dashed transparent;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .report-block:hover {
+            border-color: var(--primary-color);
+        }
+
+        .report-block.dragging {
+            opacity: 0.5;
+            transform: rotate(5deg);
+        }
+
+        .block-toolbar {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 10;
+        }
+
+        .report-block:hover .block-toolbar {
+            opacity: 1;
+        }
+
+        .toolbar-btn {
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 4px;
+            background: var(--card-bg);
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .toolbar-btn:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .toolbar-btn.danger:hover {
+            background: var(--danger-color);
+        }
+
+        /* Block Type Styles */
+        .block-chat-user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin: 10px 0;
+        }
+
+        .block-chat-ai {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin: 10px 0;
+        }
+
+        .block-visualization {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .block-visualization img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .block-text {
+            padding: 15px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            margin: 10px 0;
+            color: #333;
+        }
+
+        .block-sql {
+            background: #1e1e1e;
+            color: #f8f8f2;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        .block-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        /* Drop zone styling */
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            color: var(--text-secondary);
+            margin: 20px 0;
+            transition: all 0.2s ease;
+        }
+
+        .drop-zone.drag-over {
+            border-color: var(--primary-color);
+            background: rgba(112, 89, 242, 0.1);
+        }
+
+        /* Modal Styles */
+        .modal-content {
+            background: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .modal-header {
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-footer {
+            border-top: 1px solid var(--border-color);
+        }
+
+        .form-control {
+            background: var(--dark-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .form-control:focus {
+            background: var(--dark-bg);
+            border-color: var(--primary-color);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 0.2rem rgba(112, 89, 242, 0.25);
+        }
+
+        /* Style controls */
+        .style-controls {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .style-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .style-label {
+            min-width: 80px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .color-picker {
+            width: 40px;
+            height: 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+            }
+            
+            .report-page {
+                padding: 30px 20px;
+            }
+        }
+
+        /* Animation classes */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scale-in {
+            animation: scaleIn 0.2s ease-out;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h4><i class="fas fa-tools"></i> Report Tools</h4>
+            
+            <div class="tool-section">
+                <h6>Add Elements</h6>
+                <button class="tool-btn" onclick="addTextBlock()">
+                    <i class="fas fa-font"></i> Add Text
+                </button>
+                <button class="tool-btn" onclick="addTitleBlock()">
+                    <i class="fas fa-heading"></i> Add Title
+                </button>
+                <button class="tool-btn" onclick="addImageBlock()">
+                    <i class="fas fa-image"></i> Add Image
+                </button>
+                <button class="tool-btn" onclick="addPageBreak()">
+                    <i class="fas fa-file-alt"></i> Page Break
+                </button>
+            </div>
+
+            <div class="tool-section">
+                <h6>Data Elements</h6>
+                <button class="tool-btn" onclick="showAvailableCharts()">
+                    <i class="fas fa-chart-bar"></i> Insert Chart
+                </button>
+                <button class="tool-btn" onclick="showChatHistory()">
+                    <i class="fas fa-comments"></i> Chat History
+                </button>
+                <button class="tool-btn" onclick="addSQLBlock()">
+                    <i class="fas fa-database"></i> SQL Query
+                </button>
+            </div>
+
+            <div class="tool-section">
+                <h6>Styling</h6>
+                <div class="style-controls">
+                    <div class="style-row">
+                        <span class="style-label">Font Size:</span>
+                        <select id="fontSize" class="form-control form-control-sm" onchange="applyGlobalStyle()">
+                            <option value="12px">Small</option>
+                            <option value="14px" selected>Normal</option>
+                            <option value="16px">Large</option>
+                            <option value="18px">X-Large</option>
+                        </select>
+                    </div>
+                    <div class="style-row">
+                        <span class="style-label">Theme:</span>
+                        <select id="reportTheme" class="form-control form-control-sm" onchange="changeReportTheme()">
+                            <option value="default">Default</option>
+                            <option value="minimal">Minimal</option>
+                            <option value="corporate">Corporate</option>
+                            <option value="creative">Creative</option>
+                        </select>
+                    </div>
+                    <div class="style-row">
+                        <span class="style-label">Accent:</span>
+                        <input type="color" id="accentColor" class="color-picker" value="#7059f2" onchange="applyGlobalStyle()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="tool-section">
+                <h6>Export</h6>
+                <button class="tool-btn" onclick="exportReport('pdf')">
+                    <i class="fas fa-file-pdf"></i> Export PDF
+                </button>
+                <button class="tool-btn" onclick="exportReport('pptx')">
+                    <i class="fas fa-file-powerpoint"></i> Export PPTX
+                </button>
+                <button class="tool-btn" onclick="exportReport('png')">
+                    <i class="fas fa-file-image"></i> Export Image
+                </button>
+                <button class="tool-btn" onclick="saveReportState()">
+                    <i class="fas fa-save"></i> Save State
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content-area">
+            <div class="content-header">
+                <div>
+                    <h2>Report Builder</h2>
+                    <small class="text-muted">{{ dataset_name }} - {{ total_blocks }} elements</small>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-export" onclick="previewReport()">
+                        <i class="fas fa-eye"></i> Preview
+                    </button>
+                    <button class="btn-export" onclick="clearSession()">
+                        <i class="fas fa-broom"></i> Clear Session
+                    </button>
+                    <button class="btn-export" onclick="undoLastAction()">
+                        <i class="fas fa-undo"></i> Undo
+                    </button>
+                    <button class="btn-export" onclick="clearReport()">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                </div>
+            </div>
+
+            <div class="report-canvas">
+                <div class="report-page" id="reportPage">
+                    <!-- Report Title -->
+                    <div class="report-block fade-in" data-block-type="title">
+                        <div class="block-toolbar">
+                            <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        <div class="block-title">
+                            <h1>Data Analysis Report</h1>
+                            <p>{{ dataset_name }} - Generated on {{ "now"|date:"F d, Y" }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Render existing blocks -->
+                    {% for block in blocks %}
+                        <div class="report-block fade-in" data-block-type="{{ block.type }}" data-block-index="{{ forloop.counter0 }}">
+                            <div class="block-toolbar">
+                                <button class="toolbar-btn" onclick="moveBlockUp(this)" title="Move Up">
+                                    <i class="fas fa-arrow-up"></i>
+                                </button>
+                                <button class="toolbar-btn" onclick="moveBlockDown(this)" title="Move Down">
+                                    <i class="fas fa-arrow-down"></i>
+                                </button>
+                                <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+
+                            {% if block.type == "chat_message" %}
+                                {% if block.sender == "User" %}
+                                    <div class="block-chat-user">
+                                        <strong><i class="fas fa-user"></i> User:</strong>
+                                        <p>{{ block.content|safe }}</p>
+                                    </div>
+                                {% else %}
+                                    <div class="block-chat-ai">
+                                        <strong><i class="fas fa-robot"></i> AI Assistant:</strong>
+                                        <p>{{ block.content|safe }}</p>
+                                    </div>
+                                {% endif %}
+
+                            {% elif block.type == "query" %}
+                                <div class="block-chat-user">
+                                    <strong><i class="fas fa-question-circle"></i> Query:</strong>
+                                    <p>{{ block.user_input }}</p>
+                                </div>
+                                <div class="block-sql">
+                                    <strong>Generated SQL:</strong>
+                                    <pre><code>{{ block.sql_query }}</code></pre>
+                                </div>
+
+                            {% elif block.type == "visualization" %}
+                                <div class="block-visualization">
+                                    <h3>{{ block.chart_title }}</h3>
+                                    {% if block.image_url %}
+                                        <img src="{{ block.image_url }}" alt="{{ block.chart_title }}" />
+                                    {% endif %}
+                                    {% if block.explanation %}
+                                        <p class="mt-3">{{ block.explanation }}</p>
+                                    {% endif %}
+                                </div>
+
+                            {% elif block.type == "text" %}
+                                <div class="block-text">
+                                    {{ block.content|safe }}
+                                </div>
+
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+
+                    <!-- Drop zone for new elements -->
+                    <div class="drop-zone" id="dropZone">
+                        <i class="fas fa-plus-circle fa-3x"></i>
+                        <p>Drag elements here or use the sidebar tools to add content</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Text Modal -->
+    <div class="modal fade" id="editTextModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Text Content</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="editor" style="height: 300px;"></div>
+                    <input type="hidden" id="editBlockIndex">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveTextEdit()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Available Charts Modal -->
+    <div class="modal fade" id="chartsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Available Charts</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="chartsList" class="row">
+                        <!-- Charts will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let quill; // Quill editor instance
+        let actionHistory = []; // For undo functionality
+        let currentBlocks = {{ blocks|safe }};
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSortable();
+            initializeQuill();
+            saveCurrentState();
+        });
+
+        function initializeSortable() {
+            new Sortable(document.getElementById('reportPage'), {
+                animation: 150,
+                ghostClass: 'dragging',
+                onEnd: function(evt) {
+                    saveCurrentState();
+                    saveReportState();
+                }
+            });
+        }
+
+        function initializeQuill() {
+            quill = new Quill('#editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline', 'strike'],
+                        ['blockquote', 'code-block'],
+                        [{ 'header': 1 }, { 'header': 2 }],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        [{ 'size': ['small', false, 'large', 'huge'] }],
+                        [{ 'color': [] }, { 'background': [] }],
+                        ['link', 'image'],
+                        ['clean']
+                    ]
+                }
+            });
+        }
+
+        function addTextBlock() {
+            const blockHtml = `
+                <div class="report-block scale-in" data-block-type="text">
+                    <div class="block-toolbar">
+                        <button class="toolbar-btn" onclick="moveBlockUp(this)" title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="moveBlockDown(this)" title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="block-text">
+                        <p>Click edit to add your text content...</p>
+                    </div>
+                </div>
+            `;
+            
+            const dropZone = document.getElementById('dropZone');
+            dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+            saveCurrentState();
+        }
+
+        function addTitleBlock() {
+            const title = prompt('Enter title text:');
+            if (!title) return;
+            
+            const blockHtml = `
+                <div class="report-block scale-in" data-block-type="title">
+                    <div class="block-toolbar">
+                        <button class="toolbar-btn" onclick="moveBlockUp(this)" title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="moveBlockDown(this)" title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="block-title">
+                        <h2>${title}</h2>
+                    </div>
+                </div>
+            `;
+            
+            const dropZone = document.getElementById('dropZone');
+            dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+            saveCurrentState();
+        }
+
+        function addImageBlock() {
+            const url = prompt('Enter image URL:');
+            if (!url) return;
+            
+            const blockHtml = `
+                <div class="report-block scale-in" data-block-type="image">
+                    <div class="block-toolbar">
+                        <button class="toolbar-btn" onclick="moveBlockUp(this)" title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="moveBlockDown(this)" title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                        <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="block-visualization">
+                        <img src="${url}" alt="Custom Image" style="max-width: 100%;" />
+                    </div>
+                </div>
+            `;
+            
+            const dropZone = document.getElementById('dropZone');
+            dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+            saveCurrentState();
+        }
+
+        function addPageBreak() {
+            const blockHtml = `
+                <div class="report-block scale-in" data-block-type="pagebreak">
+                    <div class="block-toolbar">
+                        <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div style="page-break-before: always; height: 1px; border-top: 2px dashed #ccc; margin: 40px 0; text-align: center; color: #666;">
+                        <span style="background: white; padding: 0 10px;">Page Break</span>
+                    </div>
+                </div>
+            `;
+            
+            const dropZone = document.getElementById('dropZone');
+            dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+            saveCurrentState();
+        }
+
+        function editBlock(btn) {
+            const block = btn.closest('.report-block');
+            const blockType = block.getAttribute('data-block-type');
+            
+            if (blockType === 'text' || blockType === 'title') {
+                const content = block.querySelector('.block-text, .block-title');
+                quill.root.innerHTML = content.innerHTML;
+                document.getElementById('editBlockIndex').value = Array.from(block.parentNode.children).indexOf(block);
+                
+                const modal = new bootstrap.Modal(document.getElementById('editTextModal'));
+                modal.show();
+            }
+        }
+
+        function saveTextEdit() {
+            const blockIndex = document.getElementById('editBlockIndex').value;
+            const content = quill.root.innerHTML;
+            const blocks = document.querySelectorAll('.report-block');
+            const block = blocks[blockIndex];
+            
+            if (block) {
+                const contentDiv = block.querySelector('.block-text, .block-title');
+                if (contentDiv) {
+                    contentDiv.innerHTML = content;
+                }
+                saveCurrentState();
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById('editTextModal')).hide();
+        }
+
+        function removeBlock(btn) {
+            if (confirm('Are you sure you want to remove this block?')) {
+                const block = btn.closest('.report-block');
+                block.style.animation = 'fadeOut 0.3s ease-out';
+                setTimeout(() => {
+                    block.remove();
+                    saveCurrentState();
+                }, 300);
+            }
+        }
+
+        function moveBlockUp(btn) {
+            const block = btn.closest('.report-block');
+            const prev = block.previousElementSibling;
+            if (prev && prev.classList.contains('report-block')) {
+                block.parentNode.insertBefore(block, prev);
+                saveCurrentState();
+            }
+        }
+
+        function moveBlockDown(btn) {
+            const block = btn.closest('.report-block');
+            const next = block.nextElementSibling;
+            if (next && next !== document.getElementById('dropZone')) {
+                block.parentNode.insertBefore(next, block);
+                saveCurrentState();
+            }
+        }
+
+        function showAvailableCharts() {
+            // This would load available charts from session
+            fetch('/get_available_charts/')
+                .then(response => response.json())
+                .then(data => {
+                    const chartsList = document.getElementById('chartsList');
+                    chartsList.innerHTML = '';
+                    
+                    data.charts.forEach(chart => {
+                        const chartCard = `
+                            <div class="col-md-4 mb-3">
+                                <div class="card bg-dark text-white">
+                                    <img src="${chart.image_url}" class="card-img-top" style="height: 200px; object-fit: cover;">
+                                    <div class="card-body">
+                                        <h6 class="card-title">${chart.title}</h6>
+                                        <button class="btn btn-primary btn-sm" onclick="insertChart('${chart.id}')">
+                                            Insert Chart
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        chartsList.insertAdjacentHTML('beforeend', chartCard);
+                    });
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('chartsModal'));
+                    modal.show();
+                })
+                .catch(err => {
+                    alert('Could not load charts');
+                });
+        }
+
+        function insertChart(chartId) {
+            // Implementation to insert specific chart
+            console.log('Inserting chart:', chartId);
+            bootstrap.Modal.getInstance(document.getElementById('chartsModal')).hide();
+        }
+
+        function applyGlobalStyle() {
+            const fontSize = document.getElementById('fontSize').value;
+            const accentColor = document.getElementById('accentColor').value;
+            
+            document.documentElement.style.setProperty('--primary-color', accentColor);
+            document.getElementById('reportPage').style.fontSize = fontSize;
+        }
+
+        function changeReportTheme() {
+            const theme = document.getElementById('reportTheme').value;
+            const reportPage = document.getElementById('reportPage');
+            
+            // Remove existing theme classes
+            reportPage.classList.remove('theme-minimal', 'theme-corporate', 'theme-creative');
+            
+            if (theme !== 'default') {
+                reportPage.classList.add(`theme-${theme}`);
+            }
+        }
+
+        function saveCurrentState() {
+            const state = document.getElementById('reportPage').innerHTML;
+            actionHistory.push(state);
+            if (actionHistory.length > 10) {
+                actionHistory.shift(); // Keep only last 10 states
+            }
+        }
+
+        function undoLastAction() {
+            if (actionHistory.length > 1) {
+                actionHistory.pop(); // Remove current state
+                const previousState = actionHistory[actionHistory.length - 1];
+                document.getElementById('reportPage').innerHTML = previousState;
+                initializeSortable(); // Reinitialize after DOM change
+            }
+        }
+
+        function clearSession() {
+            if (confirm('This will clear all session data (chat history, charts, etc.). Are you sure?')) {
+                fetch('{% url "clear_session" %}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Session cleared successfully!');
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error clearing session:', error);
+                    alert('Failed to clear session');
+                });
+            }
+        }
+
+        function clearReport() {
+            if (confirm('Are you sure you want to clear the entire report?')) {
+                const dropZone = `
+                    <div class="drop-zone" id="dropZone">
+                        <i class="fas fa-plus-circle fa-3x"></i>
+                        <p>Drag elements here or use the sidebar tools to add content</p>
+                    </div>
+                `;
+                document.getElementById('reportPage').innerHTML = dropZone;
+                saveCurrentState();
+            }
+        }
+
+        function saveReportState() {
+            const blocks = collectAllBlocks();
+            
+            fetch('/save_report_blocks/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ blocks: blocks })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    console.log('Report state saved');
+                }
+            })
+            .catch(err => {
+                console.error('Failed to save report state:', err);
+            });
+        }
+
+        function collectAllBlocks() {
+            const blocks = [];
+            const reportBlocks = document.querySelectorAll('.report-block');
+            
+            reportBlocks.forEach((block, index) => {
+                const blockType = block.getAttribute('data-block-type');
+                let blockData = { type: blockType };
+                
+                switch (blockType) {
+                    case 'text':
+                        const textContent = block.querySelector('.block-text');
+                        blockData.content = textContent ? textContent.innerHTML : '';
+                        break;
+                    case 'title':
+                        const titleContent = block.querySelector('.block-title');
+                        blockData.content = titleContent ? titleContent.innerHTML : '';
+                        break;
+                    case 'visualization':
+                        const img = block.querySelector('img');
+                        const title = block.querySelector('h3');
+                        blockData.image_url = img ? img.src : '';
+                        blockData.chart_title = title ? title.textContent : '';
+                        break;
+                }
+                
+                blocks.push(blockData);
+            });
+            
+            return blocks;
+        }
+
+        function exportReport(format) {
+            const blocks = collectAllBlocks();
+            
+            // Show loading state
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+            btn.disabled = true;
+            
+            fetch(`/save_report/${format}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ blocks: blocks })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.blob();
+                }
+                throw new Error('Export failed');
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `data_analysis_report.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                
+                // Success notification
+                showNotification('Report exported successfully!', 'success');
+            })
+            .catch(err => {
+                console.error('Export failed:', err);
+                showNotification('Export failed. Please try again.', 'error');
+            })
+            .finally(() => {
+                // Restore button state
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+
+        function previewReport() {
+            const reportContent = document.getElementById('reportPage').innerHTML;
+            const previewWindow = window.open('', '_blank');
+            previewWindow.document.write(`
+                <html>
+                <head>
+                    <title>Report Preview</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+                        .block-toolbar { display: none !important; }
+                        .drop-zone { display: none !important; }
+                    </style>
+                </head>
+                <body>
+                    ${reportContent}
+                </body>
+                </html>
+            `);
+            previewWindow.document.close();
+        }
+
+        function showNotification(message, type) {
+            // Simple notification system
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" onclick="this.parentNode.remove()"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 5000);
+        }
+
+        // CSS for animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeOut {
+                from { opacity: 1; transform: scale(1); }
+                to { opacity: 0; transform: scale(0.9); }
+            }
+            
+            .theme-minimal .report-page {
+                font-family: 'Helvetica Neue', sans-serif;
+                line-height: 1.8;
+            }
+            
+            .theme-corporate .report-page {
+                font-family: 'Times New Roman', serif;
+                color: #2c3e50;
+            }
+            
+            .theme-creative .report-page {
+                font-family: 'Montserrat', sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>
