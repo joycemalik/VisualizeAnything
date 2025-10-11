@@ -4,6 +4,8 @@ import pandas as pd
 from django.shortcuts import render, redirect
 from django.http import JsonResponse, HttpResponse
 import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
 from django.urls import reverse
 from groq import Groq
 from dotenv import load_dotenv
@@ -18,10 +20,6 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
 from supabase import create_client
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
-import matplotlib.pyplot as plt
-import seaborn as sns
 import base64
 from io import BytesIO
 
@@ -52,6 +50,23 @@ def cleanup_old_files():
     except Exception as e:
         print(f"⚠️ Cleanup failed: {e}")
 
+
+def clear_session_data(request):
+    """Clear all previous session data when uploading new dataset"""
+    keys_to_clear = [
+        'chat_history',
+        'visualizations', 
+        'tables',
+        'report_blocks',
+        'query_results'
+    ]
+    
+    for key in keys_to_clear:
+        if key in request.session:
+            del request.session[key]
+    
+    print("✅ Cleared previous session data for fresh start")
+
 def index(request):
     cleanup_old_files()
     return render(request, "index.html", {"datasets": []})
@@ -66,6 +81,9 @@ def upload_dataset(request):
 
     if request.method == "POST" and request.FILES.get("file"):
         file = request.FILES["file"]
+
+        # Clear previous session data for clean slate
+        clear_session_data(request)
 
         # Create a unique filename for Supabase (stored name)
         session_key = request.session.session_key or str(int(time.time()))
@@ -219,22 +237,27 @@ def analyze_dataset_context(df):
         Based on the actual column names and data types, provide:
         1. What domain/business context this data represents (be specific, not generic)
         2. 5 SPECIFIC SQL queries using actual column names that would reveal valuable business insights
-        3. 3 priority visualizations that make sense for this exact dataset
-        4. Avoid generic responses like "dataset uploaded successfully"
+        3. 3 SELECTIVE priority visualizations that make sense for this exact dataset (avoid overwhelming charts)
+        4. Focus on the most important and insightful visualizations, not everything
+        
+        For visualizations, prefer:
+        - Bar charts for top N categories (not all categories)
+        - Scatter plots with meaningful relationships
+        - Histograms for key numeric distributions
+        - Avoid time series if no clear time column exists
         
         Format response as JSON:
         {{
-            "context": "Specific description of what this data represents (e.g., 'Sales transaction data with customer demographics and purchase history')",
+            "context": "Specific description of what this data represents",
             "domain": "specific domain (e.g., 'e-commerce', 'healthcare', 'finance')",
             "suggested_queries": [
                 "SELECT specific_column, COUNT(*) FROM data GROUP BY specific_column ORDER BY COUNT(*) DESC LIMIT 10",
-                "SELECT AVG(specific_numeric_column) FROM data WHERE specific_condition",
-                ...use actual column names from the data...
+                "SELECT AVG(specific_numeric_column) FROM data WHERE specific_condition"
             ],
             "priority_visualizations": [
-                {{"type": "bar", "description": "Distribution of [specific column]", "reason": "Shows business-relevant patterns"}},
-                {{"type": "scatter", "description": "[specific columns] correlation", "reason": "Reveals relationships between key metrics"}},
-                {{"type": "time_series", "description": "Trend over [time column]", "reason": "Shows temporal patterns"}}
+                {{"type": "bar", "description": "Top 10 [specific column] distribution", "reason": "Shows most significant patterns"}},
+                {{"type": "scatter", "description": "[specific columns] correlation analysis", "reason": "Reveals key relationships"}},
+                {{"type": "histogram", "description": "[specific numeric column] distribution", "reason": "Shows data spread for key metric"}}
             ]
         }}
         """
@@ -275,10 +298,10 @@ def analyze_dataset_context(df):
             "domain": "data-analysis", 
             "suggested_queries": fallback_queries[:5],
             "priority_visualizations": [
-                {"type": "bar", "description": f"Distribution of {sample_categorical[0] if sample_categorical else 'categories'}", "reason": "Shows data distribution patterns"},
-                {"type": "scatter", "description": f"Relationship between {sample_numeric[0] if sample_numeric else 'variables'} and others", "reason": "Reveals correlations"},
-                {"type": "histogram", "description": f"Frequency distribution of {sample_numeric[0] if sample_numeric else 'numeric values'}", "reason": "Shows data spread and outliers"}
-            ]
+                {"type": "bar", "description": f"Top 10 {sample_categorical[0] if sample_categorical else 'categories'} distribution", "reason": "Shows most significant data patterns"},
+                {"type": "scatter", "description": f"Relationship between {sample_numeric[0] if len(sample_numeric) > 0 else 'first'} and {sample_numeric[1] if len(sample_numeric) > 1 else 'second'} variables", "reason": "Reveals correlations between key metrics"} if len(sample_numeric) >= 2 else {"type": "histogram", "description": f"Distribution of {sample_numeric[0] if sample_numeric else 'numeric values'}", "reason": "Shows data spread"},
+                {"type": "histogram", "description": f"Frequency distribution of {sample_numeric[0] if sample_numeric else 'values'}", "reason": "Shows data distribution and outliers"}
+            ][:3]  # Ensure only 3 visualizations
         }
 
 
@@ -295,19 +318,36 @@ def auto_visualize_dataset(request):
             res = supabase.storage.from_(SUPABASE_BUCKET).download(path_in_bucket)
             df = pd.read_csv(io.BytesIO(res))
             
-            # Get analysis
-            analysis = analyze_dataset_context(df)
+            # Validate dataset size for visualization
+            if len(df) > 10000:
+                # Sample large datasets for analysis
+                df_sample = df.sample(n=5000, random_state=42)
+                print(f"Large dataset detected ({len(df)} rows). Using sample of 5000 rows for analysis.")
+            else:
+                df_sample = df
             
-            # Generate the 3 priority visualizations
+            # Get analysis
+            analysis = analyze_dataset_context(df_sample)
+            
+            # Limit to maximum 3 visualizations to avoid overwhelming
+            priority_visualizations = analysis.get('priority_visualizations', [])[:3]
+            
+            # Generate the priority visualizations
             charts = []
-            for viz in analysis['priority_visualizations']:
+            successful_charts = 0
+            max_charts = 3
+            
+            for viz in priority_visualizations:
+                if successful_charts >= max_charts:
+                    break
+                    
                 try:
-                    chart_data = generate_auto_chart(df, viz['type'], viz['description'])
+                    chart_data = generate_auto_chart(df_sample, viz['type'], viz['description'])
                     if chart_data:
                         # Save the visualization to session for report builder
                         save_visualization(
                             request,
-                            f"{viz['type'].title()} Chart",
+                            f"{viz['type'].title()} Chart: {viz['description'][:50]}",
                             chart_data['image'],
                             chart_data['explanation']
                         )
@@ -319,14 +359,25 @@ def auto_visualize_dataset(request):
                             'explanation': chart_data['explanation'],
                             'chart_title': f"{viz['type'].title()} Chart"
                         })
+                        successful_charts += 1
+                        print(f"Successfully generated {viz['type']} chart")
+                    else:
+                        print(f"Failed to generate {viz['type']} chart - no data returned")
                 except Exception as e:
                     print(f"Failed to generate {viz['type']} chart: {e}")
                     continue
             
+            if not charts:
+                return JsonResponse({
+                    'error': 'Could not generate any visualizations for this dataset. Please try manual chart creation.',
+                    'analysis': analysis
+                })
+            
             return JsonResponse({
                 'success': True,
                 'analysis': analysis,
-                'charts': charts
+                'charts': charts,
+                'message': f'Generated {len(charts)} selective visualizations focusing on key insights.'
             })
             
         except Exception as e:
@@ -335,73 +386,277 @@ def auto_visualize_dataset(request):
     return JsonResponse({'error': 'Only POST method allowed'}, status=405)
 
 def generate_auto_chart(df, chart_type, description):
-    """Generate automatic charts based on data analysis"""
+    """Generate automatic Chart.js configuration based on data analysis"""
     try:
-        # Set up the plot style
-        plt.style.use('default')
-        sns.set_palette("husl")
-        
-        # Create figure
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         categorical_cols = df.select_dtypes(include=['object']).columns
+        
+        # Limit data size for better performance and readability
+        max_categories = 10
+        max_data_points = 100
         
         if chart_type == 'bar' and len(categorical_cols) > 0 and len(numeric_cols) > 0:
             # Bar chart of categorical vs numeric
             cat_col = categorical_cols[0]
             num_col = numeric_cols[0]
             
-            # Get top 10 categories to avoid overcrowding
-            top_categories = df[cat_col].value_counts().head(10)
+            # Get top N categories to avoid overcrowding
+            top_categories = df[cat_col].value_counts().head(max_categories)
             filtered_df = df[df[cat_col].isin(top_categories.index)]
             
-            grouped = filtered_df.groupby(cat_col)[num_col].mean().reset_index()
-            sns.barplot(data=grouped, x=cat_col, y=num_col, ax=ax)
-            ax.set_title(f'Average {num_col} by {cat_col}', fontsize=14, fontweight='bold')
-            ax.tick_params(axis='x', rotation=45)
+            # Group and aggregate data
+            grouped = filtered_df.groupby(cat_col)[num_col].mean().round(2).reset_index()
+            
+            # Further limit if still too many data points
+            if len(grouped) > max_categories:
+                grouped = grouped.head(max_categories)
+            
+            return {
+                'chart_config': {
+                    'type': 'bar',
+                    'data': {
+                        'labels': grouped[cat_col].tolist(),
+                        'datasets': [{
+                            'label': f'Average {num_col}',
+                            'data': grouped[num_col].tolist(),
+                            'backgroundColor': '#7059f2ff',
+                            'borderColor': '#533cd0ff',
+                            'borderWidth': 1
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'plugins': {
+                            'title': {
+                                'display': True,
+                                'text': f'Top {len(grouped)} {cat_col} by Average {num_col}'
+                            },
+                            'legend': {
+                                'display': False
+                            }
+                        },
+                        'scales': {
+                            'y': {
+                                'beginAtZero': True
+                            }
+                        }
+                    }
+                },
+                'image': generate_chart_image('bar', grouped[cat_col].tolist(), grouped[num_col].tolist(), f'Top {len(grouped)} {cat_col}'),
+                'explanation': f'Bar chart showing top {len(grouped)} categories of {cat_col} by average {num_col}. Limited to most significant categories for clarity.'
+            }
             
         elif chart_type == 'scatter' and len(numeric_cols) >= 2:
             # Scatter plot of two numeric columns
             x_col, y_col = numeric_cols[0], numeric_cols[1]
-            sns.scatterplot(data=df, x=x_col, y=y_col, ax=ax, alpha=0.6)
-            ax.set_title(f'Relationship: {y_col} vs {x_col}', fontsize=14, fontweight='bold')
             
-        elif chart_type == 'heatmap' and len(numeric_cols) >= 2:
-            # Correlation heatmap
-            correlation_matrix = df[numeric_cols].corr()
-            sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
-                      square=True, ax=ax, cbar_kws={'shrink': 0.8})
-            ax.set_title('Correlation Matrix', fontsize=14, fontweight='bold')
+            # Sample data if too large
+            sample_df = df.sample(n=min(max_data_points, len(df))).copy()
             
-        else:
-            # Fallback: simple distribution plot
-            if len(numeric_cols) > 0:
-                df[numeric_cols[0]].hist(bins=20, ax=ax, alpha=0.7)
-                ax.set_title(f'Distribution of {numeric_cols[0]}', fontsize=14, fontweight='bold')
-            else:
-                return None
+            # Remove outliers for better visualization
+            for col in [x_col, y_col]:
+                Q1 = sample_df[col].quantile(0.25)
+                Q3 = sample_df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                sample_df = sample_df[(sample_df[col] >= lower_bound) & (sample_df[col] <= upper_bound)]
+            
+            scatter_data = [{'x': round(x, 2), 'y': round(y, 2)} 
+                          for x, y in zip(sample_df[x_col], sample_df[y_col]) 
+                          if pd.notna(x) and pd.notna(y)]
+            
+            return {
+                'chart_config': {
+                    'type': 'scatter',
+                    'data': {
+                        'datasets': [{
+                            'label': f'{y_col} vs {x_col}',
+                            'data': scatter_data,
+                            'backgroundColor': '#7059f2ff',
+                            'borderColor': '#533cd0ff',
+                            'pointRadius': 4
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'plugins': {
+                            'title': {
+                                'display': True,
+                                'text': f'{y_col} vs {x_col} Relationship'
+                            }
+                        },
+                        'scales': {
+                            'x': {
+                                'title': {
+                                    'display': True,
+                                    'text': x_col
+                                }
+                            },
+                            'y': {
+                                'title': {
+                                    'display': True,
+                                    'text': y_col
+                                }
+                            }
+                        }
+                    }
+                },
+                'image': generate_chart_image('scatter', [d['x'] for d in scatter_data], [d['y'] for d in scatter_data], f'{y_col} vs {x_col}'),
+                'explanation': f'Scatter plot showing relationship between {x_col} and {y_col}. Sample of {len(scatter_data)} data points, outliers removed for clarity.'
+            }
+            
+        elif chart_type in ['histogram', 'line'] and len(numeric_cols) > 0:
+            # Histogram for numeric distribution
+            num_col = numeric_cols[0]
+            
+            # Remove outliers and create bins
+            data_series = df[num_col].dropna()
+            Q1 = data_series.quantile(0.25)
+            Q3 = data_series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            filtered_data = data_series[(data_series >= lower_bound) & (data_series <= upper_bound)]
+            
+            # Create histogram bins
+            bins = 15  # Reasonable number of bins
+            hist, bin_edges = np.histogram(filtered_data, bins=bins)
+            bin_centers = [(bin_edges[i] + bin_edges[i+1]) / 2 for i in range(len(bin_edges)-1)]
+            
+            return {
+                'chart_config': {
+                    'type': 'bar',
+                    'data': {
+                        'labels': [f'{round(bc, 2)}' for bc in bin_centers],
+                        'datasets': [{
+                            'label': f'Frequency',
+                            'data': hist.tolist(),
+                            'backgroundColor': '#7059f2ff',
+                            'borderColor': '#533cd0ff',
+                            'borderWidth': 1
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'plugins': {
+                            'title': {
+                                'display': True,
+                                'text': f'Distribution of {num_col}'
+                            },
+                            'legend': {
+                                'display': False
+                            }
+                        },
+                        'scales': {
+                            'x': {
+                                'title': {
+                                    'display': True,
+                                    'text': num_col
+                                }
+                            },
+                            'y': {
+                                'title': {
+                                    'display': True,
+                                    'text': 'Frequency'
+                                },
+                                'beginAtZero': True
+                            }
+                        }
+                    }
+                },
+                'image': generate_chart_image('histogram', bin_centers, hist.tolist(), f'Distribution of {num_col}'),
+                'explanation': f'Histogram showing the distribution of {num_col}. Outliers removed and data grouped into {bins} bins for better readability.'
+            }
+            
+        elif chart_type == 'pie' and len(categorical_cols) > 0:
+            # Pie chart for categorical distribution
+            cat_col = categorical_cols[0]
+            
+            # Get top categories only
+            value_counts = df[cat_col].value_counts().head(8)  # Max 8 slices for readability
+            
+            # Group small categories as "Others"
+            if len(value_counts) < df[cat_col].nunique():
+                others_count = df[cat_col].value_counts().iloc[8:].sum()
+                if others_count > 0:
+                    value_counts['Others'] = others_count
+            
+            return {
+                'chart_config': {
+                    'type': 'pie',
+                    'data': {
+                        'labels': value_counts.index.tolist(),
+                        'datasets': [{
+                            'data': value_counts.values.tolist(),
+                            'backgroundColor': [
+                                '#7059f2ff', '#533cd0ff', '#3b82f6', '#10b981', 
+                                '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
+                            ]
+                        }]
+                    },
+                    'options': {
+                        'responsive': True,
+                        'plugins': {
+                            'title': {
+                                'display': True,
+                                'text': f'Distribution of {cat_col}'
+                            },
+                            'legend': {
+                                'position': 'right'
+                            }
+                        }
+                    }
+                },
+                'image': generate_chart_image('pie', value_counts.index.tolist(), value_counts.values.tolist(), f'Distribution of {cat_col}'),
+                'explanation': f'Pie chart showing distribution of {cat_col}. Limited to top {len(value_counts)} categories for clarity.'
+            }
         
+        return None
+        
+    except Exception as e:
+        print(f"Error generating auto chart: {e}")
+        return None
+
+
+def generate_chart_image(chart_type, x_data, y_data, title):
+    """Generate a simple base64 encoded chart image using matplotlib"""
+    try:
+        import matplotlib.pyplot as plt
+        import base64
+        from io import BytesIO
+        
+        plt.style.use('default')
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        if chart_type == 'bar':
+            ax.bar(range(len(x_data)), y_data, color='#7059f2')
+            ax.set_xticks(range(len(x_data)))
+            ax.set_xticklabels(x_data, rotation=45, ha='right')
+        elif chart_type == 'scatter':
+            ax.scatter(x_data, y_data, color='#7059f2', alpha=0.6)
+        elif chart_type == 'histogram':
+            ax.bar(range(len(x_data)), y_data, color='#7059f2')
+            ax.set_xticks(range(len(x_data)))
+            ax.set_xticklabels([f'{x:.1f}' for x in x_data], rotation=45, ha='right')
+        elif chart_type == 'pie':
+            ax.pie(y_data, labels=x_data, autopct='%1.1f%%', startangle=90)
+        
+        ax.set_title(title, fontsize=14, fontweight='bold')
         plt.tight_layout()
         
         # Convert to base64
         buffer = BytesIO()
-        plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+        plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
         buffer.seek(0)
-        plot_data = buffer.getvalue()
-        buffer.close()
+        image_base64 = base64.b64encode(buffer.read()).decode()
         plt.close()
         
-        plot_url = base64.b64encode(plot_data).decode()
-        
-        return {
-            'image': f'data:image/png;base64,{plot_url}',
-            'explanation': f'Auto-generated {chart_type} chart showing {description}'
-        }
+        return f"data:image/png;base64,{image_base64}"
         
     except Exception as e:
-        print(f"Auto chart generation error: {e}")
-        return None
+        print(f"Error generating chart image: {e}")
+        return ""
 
 
 def dataset_preview(request, dataset_name):
@@ -700,6 +955,14 @@ def run_query(request, dataset_name):
         visualization_suggestion = suggest_visualization_type(result_df, sql_query)
 
         # ---- Save to session for report builder ----
+        # Save the user query as a chat message
+        save_chat_message(request, "User", user_input)
+        
+        # Save the AI response (SQL + results summary)
+        ai_response = f"Generated SQL Query:\n```sql\n{sql_query}\n```\n\nFound {len(result_data)} results."
+        save_chat_message(request, "AI Assistant", ai_response)
+        
+        # Save the detailed query result
         save_query_result(
             request,
             user_input,
@@ -730,47 +993,652 @@ def run_query(request, dataset_name):
 
 
 
-def save_report(request, format):
-    body = json.loads(request.body)
-    html_content = body.get("html", "")
+def save_report_blocks(request):
+    """Save edited report blocks back to session"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            blocks = data.get('blocks', [])
+            request.session['report_blocks'] = blocks
+            return JsonResponse({'status': 'success'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    return JsonResponse({'status': 'error', 'message': 'Invalid method'})
 
-    if format == "pdf":
+
+def save_report(request, format):
+    """Enhanced report generation with complete chat history and figures"""
+    try:
+        if request.method == 'POST':
+            data = json.loads(request.body)
+            blocks = data.get("blocks", [])
+            
+            # If no blocks provided, get from session
+            if not blocks:
+                blocks = request.session.get('report_blocks', [])
+            
+        else:
+            # GET request - use session data
+            blocks = request.session.get('report_blocks', [])
+        
+        if format == "pdf":
+            return generate_comprehensive_pdf(blocks)
+        elif format == "pptx":
+            return generate_comprehensive_pptx(blocks)
+        elif format in ["jpg", "png"]:
+            return generate_report_image(blocks, format)
+            
+    except Exception as e:
+        return JsonResponse({'error': f'Report generation failed: {str(e)}'}, status=500)
+    
+    return HttpResponse("Invalid format", status=400)
+
+
+def generate_comprehensive_pdf(blocks):
+    """Generate a comprehensive PDF with chat history, figures, and styling"""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.pdfgen import canvas
+        import tempfile
+        import requests
+    except ImportError as e:
+        # Fallback to simple PDF generation if reportlab is not available
+        print(f"ReportLab not available: {e}")
+        return generate_simple_pdf(blocks)
+    
+    try:
         buffer = io.BytesIO()
-        p = canvas.Canvas(buffer)
-        p.drawString(100, 750, html_content)  # Simple text export
-        p.showPage()
-        p.save()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                              rightMargin=50, leftMargin=50, 
+                              topMargin=50, bottomMargin=50)
+        
+        # Create styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            textColor=colors.HexColor('#2E86AB'),
+            alignment=1  # Center alignment
+        )
+        
+        user_style = ParagraphStyle(
+            'UserMessage',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=10,
+            leftIndent=20,
+            textColor=colors.HexColor('#1E3A8A'),
+            backColor=colors.HexColor('#EBF8FF')
+        )
+        
+        ai_style = ParagraphStyle(
+            'AIMessage',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=10,
+            leftIndent=20,
+            textColor=colors.HexColor('#059669'),
+            backColor=colors.HexColor('#ECFDF5')
+        )
+        
+        code_style = ParagraphStyle(
+            'CodeBlock',
+            parent=styles['Code'],
+            fontSize=10,
+            leftIndent=30,
+            backColor=colors.HexColor('#F3F4F6'),
+            textColor=colors.HexColor('#374151')
+        )
+        
+        story = []
+        
+        # Add title
+        story.append(Paragraph("Data Analysis Report", title_style))
+        story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", styles['Normal']))
+        story.append(Spacer(1, 30))
+        
+        # Process blocks
+        for i, block in enumerate(blocks):
+            block_type = block.get('type', '')
+            
+            if block_type == 'chat_message':
+                sender = block.get('sender', 'User')
+                content = block.get('content', '')
+                
+                if sender.lower() == 'user':
+                    story.append(Paragraph(f"<b>User Question:</b>", user_style))
+                    story.append(Paragraph(content, user_style))
+                else:
+                    story.append(Paragraph(f"<b>AI Response:</b>", ai_style))
+                    story.append(Paragraph(content, ai_style))
+                
+                story.append(Spacer(1, 15))
+                
+            elif block_type == 'query':
+                user_input = block.get('user_input', '')
+                sql_query = block.get('sql_query', '')
+                
+                story.append(Paragraph(f"<b>Query Request:</b>", user_style))
+                story.append(Paragraph(user_input, user_style))
+                story.append(Spacer(1, 10))
+                
+                story.append(Paragraph(f"<b>Generated SQL:</b>", code_style))
+                story.append(Paragraph(f"<font name='Courier'>{sql_query}</font>", code_style))
+                story.append(Spacer(1, 15))
+                
+            elif block_type == 'visualization':
+                chart_title = block.get('chart_title', 'Chart')
+                image_url = block.get('image_url', '')
+                explanation = block.get('explanation', '')
+                
+                story.append(Paragraph(f"<b>Visualization: {chart_title}</b>", styles['Heading3']))
+                
+                # Handle base64 images
+                if image_url and image_url.startswith('data:'):
+                    try:
+                        header, encoded = image_url.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                        
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                            tmp_file.write(image_data)
+                            tmp_file_path = tmp_file.name
+                        
+                        img = Image(tmp_file_path, width=5*inch, height=3*inch)
+                        story.append(img)
+                        
+                        # Clean up temp file
+                        import os
+                        os.unlink(tmp_file_path)
+                    except Exception as e:
+                        story.append(Paragraph(f"[Image could not be loaded: {str(e)}]", styles['Normal']))
+                
+                if explanation:
+                    story.append(Spacer(1, 10))
+                    story.append(Paragraph(explanation, styles['Normal']))
+                
+                story.append(Spacer(1, 20))
+                
+            elif block_type == 'text':
+                content = block.get('content', '')
+                story.append(Paragraph(content, styles['Normal']))
+                story.append(Spacer(1, 15))
+        
+        # Build PDF
+        doc.build(story)
         buffer.seek(0)
+        
         response = HttpResponse(buffer, content_type='application/pdf')
-        response['Content-Disposition'] = 'attachment; filename=report.pdf'
+        response['Content-Disposition'] = 'attachment; filename=data_analysis_report.pdf'
         return response
         
-    elif format == "pptx":
-        # Simple PPTX export (basic plain text slide)
-        prs = Presentation()
-        slide_layout = prs.slide_layouts[5]
+    except Exception as e:
+        print(f"Advanced PDF generation failed: {e}")
+        return generate_simple_pdf(blocks)
+
+
+def generate_simple_pdf(blocks):
+    """Simple PDF generation fallback when reportlab is not available"""
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+    except ImportError:
+        # Final fallback - return HTML
+        return generate_html_fallback(blocks)
+    
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    y_position = height - 50
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(50, y_position, "Data Analysis Report")
+    y_position -= 30
+    
+    p.setFont("Helvetica", 10)
+    p.drawString(50, y_position, f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
+    y_position -= 40
+    
+    p.setFont("Helvetica", 10)
+    
+    for block in blocks:
+        if y_position < 100:  # Start new page
+            p.showPage()
+            y_position = height - 50
+        
+        block_type = block.get('type', '')
+        
+        if block_type == 'chat_message':
+            sender = block.get('sender', 'User')
+            content = block.get('content', '')[:100]  # Truncate for simple PDF
+            
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(50, y_position, f"{sender}:")
+            y_position -= 15
+            
+            p.setFont("Helvetica", 9)
+            p.drawString(70, y_position, content)
+            y_position -= 25
+            
+        elif block_type == 'visualization':
+            chart_title = block.get('chart_title', 'Chart')
+            explanation = block.get('explanation', '')[:80]  # Truncate
+            
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(50, y_position, f"Chart: {chart_title}")
+            y_position -= 15
+            
+            if explanation:
+                p.setFont("Helvetica", 9)
+                p.drawString(70, y_position, explanation)
+                y_position -= 25
+    
+    p.save()
+    buffer.seek(0)
+    
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename=simple_report.pdf'
+    return response
+
+
+def generate_html_fallback(blocks):
+    """HTML fallback when PDF generation is not possible"""
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Data Analysis Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }}
+            .user-message {{ background: #e3f2fd; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+            .ai-message {{ background: #e8f5e8; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+            .chart {{ text-align: center; margin: 20px 0; }}
+            .chart img {{ max-width: 100%; }}
+            h1 {{ color: #333; text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <h1>Data Analysis Report</h1>
+        <p><strong>Generated on:</strong> {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+    """
+    
+    for block in blocks:
+        block_type = block.get('type', '')
+        
+        if block_type == 'chat_message':
+            sender = block.get('sender', 'User')
+            content = block.get('content', '')
+            css_class = 'user-message' if sender.lower() == 'user' else 'ai-message'
+            html_content += f'<div class="{css_class}"><strong>{sender}:</strong> {content}</div>'
+            
+        elif block_type == 'visualization':
+            chart_title = block.get('chart_title', 'Chart')
+            image_url = block.get('image_url', '')
+            explanation = block.get('explanation', '')
+            
+            html_content += f'<div class="chart"><h3>{chart_title}</h3>'
+            if image_url:
+                html_content += f'<img src="{image_url}" alt="{chart_title}">'
+            if explanation:
+                html_content += f'<p>{explanation}</p>'
+            html_content += '</div>'
+    
+    html_content += """
+    </body>
+    </html>
+    """
+    
+    response = HttpResponse(html_content, content_type='text/html')
+    response['Content-Disposition'] = 'attachment; filename=report.html'
+    return response
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    import tempfile
+    import requests
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                          rightMargin=50, leftMargin=50, 
+                          topMargin=50, bottomMargin=50)
+    
+    # Create styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        textColor=colors.HexColor('#2E86AB'),
+        alignment=1  # Center alignment
+    )
+    
+    user_style = ParagraphStyle(
+        'UserMessage',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=10,
+        leftIndent=20,
+        textColor=colors.HexColor('#1E3A8A'),
+        backColor=colors.HexColor('#EBF8FF')
+    )
+    
+    ai_style = ParagraphStyle(
+        'AIMessage',
+        parent=styles['Normal'],
+        fontSize=12,
+        spaceAfter=10,
+        leftIndent=20,
+        textColor=colors.HexColor('#059669'),
+        backColor=colors.HexColor('#ECFDF5')
+    )
+    
+    code_style = ParagraphStyle(
+        'CodeBlock',
+        parent=styles['Code'],
+        fontSize=10,
+        leftIndent=30,
+        backColor=colors.HexColor('#F3F4F6'),
+        textColor=colors.HexColor('#374151')
+    )
+    
+    story = []
+    
+    # Add title
+    story.append(Paragraph("Data Analysis Report", title_style))
+    story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", styles['Normal']))
+    story.append(Spacer(1, 30))
+    
+    # Process blocks
+    for i, block in enumerate(blocks):
+        block_type = block.get('type', '')
+        
+        if block_type == 'chat_message':
+            sender = block.get('sender', 'User')
+            content = block.get('content', '')
+            
+            if sender.lower() == 'user':
+                story.append(Paragraph(f"<b>User Question:</b>", user_style))
+                story.append(Paragraph(content, user_style))
+            else:
+                story.append(Paragraph(f"<b>AI Response:</b>", ai_style))
+                story.append(Paragraph(content, ai_style))
+            
+            story.append(Spacer(1, 15))
+            
+        elif block_type == 'query':
+            user_input = block.get('user_input', '')
+            sql_query = block.get('sql_query', '')
+            
+            story.append(Paragraph(f"<b>Query Request:</b>", user_style))
+            story.append(Paragraph(user_input, user_style))
+            story.append(Spacer(1, 10))
+            
+            story.append(Paragraph(f"<b>Generated SQL:</b>", code_style))
+            story.append(Paragraph(f"<font name='Courier'>{sql_query}</font>", code_style))
+            story.append(Spacer(1, 15))
+            
+        elif block_type == 'visualization':
+            chart_title = block.get('chart_title', 'Chart')
+            image_url = block.get('image_url', '')
+            explanation = block.get('explanation', '')
+            
+            story.append(Paragraph(f"<b>Visualization: {chart_title}</b>", styles['Heading3']))
+            
+            # Download and add image
+            if image_url and (image_url.startswith('http') or image_url.startswith('data:')):
+                try:
+                    if image_url.startswith('data:'):
+                        # Handle base64 images
+                        header, encoded = image_url.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                        
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                            tmp_file.write(image_data)
+                            tmp_file_path = tmp_file.name
+                        
+                        img = Image(tmp_file_path, width=5*inch, height=3*inch)
+                        story.append(img)
+                        
+                        # Clean up temp file
+                        import os
+                        os.unlink(tmp_file_path)
+                    else:
+                        # Handle URL images
+                        response = requests.get(image_url)
+                        if response.status_code == 200:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                                tmp_file.write(response.content)
+                                tmp_file_path = tmp_file.name
+                            
+                            img = Image(tmp_file_path, width=5*inch, height=3*inch)
+                            story.append(img)
+                            
+                            # Clean up temp file
+                            import os
+                            os.unlink(tmp_file_path)
+                except Exception as e:
+                    story.append(Paragraph(f"[Image could not be loaded: {str(e)}]", styles['Normal']))
+            
+            if explanation:
+                story.append(Spacer(1, 10))
+                story.append(Paragraph(explanation, styles['Normal']))
+            
+            story.append(Spacer(1, 20))
+            
+        elif block_type == 'text':
+            content = block.get('content', '')
+            story.append(Paragraph(content, styles['Normal']))
+            story.append(Spacer(1, 15))
+            
+        elif block_type == 'table':
+            # Handle table data if present
+            table_data = block.get('data', [])
+            if table_data:
+                # Convert to reportlab table
+                table = Table(table_data)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                story.append(table)
+                story.append(Spacer(1, 20))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename=data_analysis_report.pdf'
+    return response
+
+
+def generate_comprehensive_pptx(blocks):
+    """Generate comprehensive PowerPoint with chat history and figures"""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
+    import tempfile
+    import requests
+    
+    prs = Presentation()
+    
+    # Title slide
+    slide_layout = prs.slide_layouts[0]  # Title slide
+    slide = prs.slides.add_slide(slide_layout)
+    title = slide.shapes.title
+    subtitle = slide.placeholders[1]
+    
+    title.text = "Data Analysis Report"
+    subtitle.text = f"Generated on {datetime.now().strftime('%B %d, %Y')}"
+    
+    current_slide = None
+    slide_content = []
+    
+    for block in blocks:
+        block_type = block.get('type', '')
+        
+        if block_type == 'visualization':
+            # Create new slide for each visualization
+            slide_layout = prs.slide_layouts[5]  # Blank slide
+            slide = prs.slides.add_slide(slide_layout)
+            
+            # Add title
+            title_shape = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
+            title_frame = title_shape.text_frame
+            title_frame.text = block.get('chart_title', 'Visualization')
+            title_frame.paragraphs[0].font.size = Pt(24)
+            title_frame.paragraphs[0].font.bold = True
+            
+            # Add image
+            image_url = block.get('image_url', '')
+            if image_url:
+                try:
+                    if image_url.startswith('data:'):
+                        # Handle base64 images
+                        header, encoded = image_url.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                        
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                            tmp_file.write(image_data)
+                            tmp_file_path = tmp_file.name
+                        
+                        slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), Inches(8), Inches(5))
+                        
+                        # Clean up
+                        import os
+                        os.unlink(tmp_file_path)
+                    else:
+                        # Handle URL images
+                        response = requests.get(image_url)
+                        if response.status_code == 200:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                                tmp_file.write(response.content)
+                                tmp_file_path = tmp_file.name
+                            
+                            slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), Inches(8), Inches(5))
+                            
+                            # Clean up
+                            import os
+                            os.unlink(tmp_file_path)
+                except Exception as e:
+                    # Add error text
+                    error_shape = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(2))
+                    error_frame = error_shape.text_frame
+                    error_frame.text = f"Image could not be loaded: {str(e)}"
+            
+            # Add explanation
+            explanation = block.get('explanation', '')
+            if explanation:
+                exp_shape = slide.shapes.add_textbox(Inches(0.5), Inches(7.5), Inches(9), Inches(1))
+                exp_frame = exp_shape.text_frame
+                exp_frame.text = explanation
+        
+        elif block_type in ['chat_message', 'query', 'text']:
+            # Accumulate text content for text slides
+            if block_type == 'chat_message':
+                sender = block.get('sender', 'User')
+                content = block.get('content', '')
+                slide_content.append(f"{sender}: {content}")
+            elif block_type == 'query':
+                user_input = block.get('user_input', '')
+                sql_query = block.get('sql_query', '')
+                slide_content.append(f"Query: {user_input}")
+                slide_content.append(f"SQL: {sql_query}")
+            elif block_type == 'text':
+                content = block.get('content', '')
+                slide_content.append(content)
+    
+    # Add accumulated text content to a summary slide
+    if slide_content:
+        slide_layout = prs.slide_layouts[1]  # Title and content
         slide = prs.slides.add_slide(slide_layout)
-        textbox = slide.shapes.add_textbox(100, 100, 500, 500)
-        textbox.text = html_content
-        buffer = io.BytesIO()
-        prs.save(buffer)
-        response = HttpResponse(buffer.getvalue(), content_type="application/vnd.openxmlformats-officedocument.presentation.presentation")
-        response["Content-Disposition"] = "attachment; filename=report.pptx"
-        return response
+        title = slide.shapes.title
+        content_placeholder = slide.placeholders[1]
+        
+        title.text = "Analysis Summary"
+        content_text = '\n\n'.join(slide_content[:10])  # Limit content
+        content_placeholder.text = content_text
+    
+    buffer = io.BytesIO()
+    prs.save(buffer)
+    buffer.seek(0)
+    
+    response = HttpResponse(buffer.getvalue(), 
+                          content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    response["Content-Disposition"] = "attachment; filename=data_analysis_report.pptx"
+    return response
 
-    elif format in ["jpg", "png"]:
-        # Image export using html2image (optional, install html2image if needed)
-        from html2image import Html2Image
-        hti = Html2Image()
-        ext = "png" if format == "png" else "jpg"
-        output_path = f"report.{ext}"
-        hti.screenshot(html_str=html_content, save_as=output_path)
-        with open(output_path, "rb") as f:
-            response = HttpResponse(f.read(), content_type=f"image/{ext}")
-            response["Content-Disposition"] = f"attachment; filename=report.{ext}"
-            return response
 
-    return HttpResponse("Invalid format", status=400)
+def clear_session_data_endpoint(request):
+    """Endpoint to manually clear session data"""
+    if request.method == 'POST':
+        clear_session_data(request)
+        return JsonResponse({'status': 'success', 'message': 'Session data cleared'})
+    return JsonResponse({'status': 'error', 'message': 'POST request required'})
+
+
+def get_available_charts(request):
+    """Get all available charts/visualizations from session"""
+    try:
+        visualizations = request.session.get('visualizations', [])
+        charts = []
+        
+        for i, viz in enumerate(visualizations):
+            charts.append({
+                'id': i,
+                'title': viz.get('chart_title', f'Chart {i+1}'),
+                'image_url': viz.get('image_url', ''),
+                'explanation': viz.get('explanation', ''),
+                'timestamp': viz.get('timestamp', '')
+            })
+        
+        return JsonResponse({'status': 'success', 'charts': charts})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+def generate_report_image(blocks, format_type):
+    """Generate report as image using HTML to image conversion"""
+    # This is a simplified version - you might want to use libraries like wkhtmltopdf or playwright
+    html_content = "<html><head><style>body{font-family:Arial;padding:20px;}</style></head><body>"
+    
+    for block in blocks:
+        block_type = block.get('type', '')
+        
+        if block_type == 'chat_message':
+            sender = block.get('sender', 'User')
+            content = block.get('content', '')
+            html_content += f"<div style='margin:10px 0;'><b>{sender}:</b> {content}</div>"
+        elif block_type == 'visualization':
+            title = block.get('chart_title', '')
+            image_url = block.get('image_url', '')
+            html_content += f"<div style='margin:20px 0;'><h3>{title}</h3>"
+            if image_url:
+                html_content += f"<img src='{image_url}' style='max-width:100%;'/>"
+            html_content += "</div>"
+        elif block_type == 'text':
+            content = block.get('content', '')
+            html_content += f"<div style='margin:10px 0;'>{content}</div>"
+    
+    html_content += "</body></html>"
+    
+    # For now, return as HTML - you can implement proper image conversion
+    response = HttpResponse(html_content, content_type='text/html')
+    return response
 
 
 # ... all your imports ...
@@ -817,20 +1685,65 @@ def save_query_result(request, user_input, sql_query, result_data, visualization
 
 
 def report_builder(request):
+    """Enhanced report builder with complete chat history and editing capabilities"""
+    # Get all session data
     chat_history = request.session.get("chat_history", [])
     visualizations = request.session.get("visualizations", [])
-    tables = request.session.get("tables", [])  # Add this
-
-    # Compose all blocks in order (you may want to save the block order in session)
-    blocks = []
-    blocks.extend(chat_history)
-    blocks.extend(visualizations)
-    blocks.extend(tables)
-    # Optionally, sort by timestamp or order field
-
-    return render(request, "report_builder.html", {
+    tables = request.session.get("tables", [])
+    
+    # Check if user has custom report blocks, otherwise build from session data
+    report_blocks = request.session.get('report_blocks', [])
+    
+    if not report_blocks:
+        # Build initial report blocks from session data
+        blocks = []
+        
+        # Combine and sort all blocks by timestamp if available
+        all_items = []
+        
+        # Add chat messages
+        for item in chat_history:
+            if 'timestamp' in item:
+                all_items.append(item)
+            else:
+                item['timestamp'] = datetime.utcnow().isoformat()
+                all_items.append(item)
+        
+        # Add visualizations  
+        for item in visualizations:
+            if 'timestamp' in item:
+                all_items.append(item)
+            else:
+                item['timestamp'] = datetime.utcnow().isoformat()
+                all_items.append(item)
+        
+        # Add tables
+        for item in tables:
+            if 'timestamp' in item:
+                all_items.append(item)
+            else:
+                item['timestamp'] = datetime.utcnow().isoformat()
+                all_items.append(item)
+        
+        # Sort by timestamp
+        try:
+            all_items.sort(key=lambda x: x.get('timestamp', ''))
+        except:
+            pass  # If timestamp sorting fails, keep original order
+        
+        # Save to session
+        request.session['report_blocks'] = all_items
+        blocks = all_items
+    else:
+        blocks = report_blocks
+    
+    # Get dataset info for context
+    dataset_display_name = request.session.get("dataset_display_name", "Dataset")
+    
+    return render(request, "enhanced_report_builder.html", {
         "blocks": blocks,
-        # pass additional context as needed
+        "dataset_name": dataset_display_name,
+        "total_blocks": len(blocks),
     })
 
 
@@ -853,229 +1766,302 @@ def suggest_visualization_type(df, query):
         return "line_chart"
 
 
-def generate_chart(request):
-    """Generate chart using Seaborn based on query results and save to session for report builder"""
+def chart_builder(request):
+    """New Chart.js based chart builder with axis selection"""
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            chart_type = data.get('chart_type', 'bar')
-            query_results = data.get('query_results', [])
-            columns = data.get('columns', [])
+            action = data.get('action')
             
-            if not query_results or not columns:
-                return JsonResponse({'error': 'No data provided'}, status=400)
+            print(f"Chart builder action: {action}")  # Debug log
             
-            # Convert to DataFrame
-            df = pd.DataFrame(query_results, columns=columns)
-            
-            # Set up the plot style
-            plt.style.use('default')
-            sns.set_palette("husl")
-            
-            # Create figure
-            fig, ax = plt.subplots(figsize=(12, 8))
-            
-            chart_explanation = ""
-            skip_normal_processing = False
-            
-            if chart_type == 'scatter':
-                if len(df.select_dtypes(include=[np.number]).columns) >= 2:
-                    numeric_cols = df.select_dtypes(include=[np.number]).columns[:2]
-                    x_col, y_col = numeric_cols[0], numeric_cols[1]
-                    sns.scatterplot(data=df, x=x_col, y=y_col, ax=ax, s=100, alpha=0.7)
-                    ax.set_title(f'Scatter Plot: {y_col} vs {x_col}', fontsize=16, fontweight='bold')
-                    chart_explanation = f"This scatter plot shows the relationship between {x_col} and {y_col}. Each point represents one data record."
-                else:
-                    return JsonResponse({'error': 'Need at least 2 numeric columns for scatter plot'}, status=400)
-                    
-            elif chart_type == 'box':
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    cat_cols = df.select_dtypes(include=['object']).columns
-                    if len(cat_cols) > 0 and len(numeric_cols) > 0:
-                        sns.boxplot(data=df, x=cat_cols[0], y=numeric_cols[0], ax=ax)
-                        ax.set_title(f'Box Plot: {numeric_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
-                        chart_explanation = f"This box plot shows the distribution of {numeric_cols[0]} across different categories of {cat_cols[0]}."
-                    else:
-                        sns.boxplot(data=df[numeric_cols], ax=ax)
-                        ax.set_title('Box Plot of Numeric Variables', fontsize=16, fontweight='bold')
-                        chart_explanation = "This box plot shows the distribution of numeric variables. The box shows the quartiles, and whiskers show the range."
-                else:
-                    return JsonResponse({'error': 'Need at least 1 numeric column for box plot'}, status=400)
-                    
-            elif chart_type == 'heatmap':
-                numeric_df = df.select_dtypes(include=[np.number])
-                if len(numeric_df.columns) >= 2:
-                    correlation_matrix = numeric_df.corr()
-                    sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
-                              square=True, ax=ax, cbar_kws={'shrink': 0.8})
-                    ax.set_title('Correlation Heatmap', fontsize=16, fontweight='bold')
-                    chart_explanation = "This heatmap shows the correlation between numeric variables. Values close to 1 indicate strong positive correlation, close to -1 indicate strong negative correlation, and close to 0 indicate no correlation."
-                else:
-                    return JsonResponse({'error': 'Need at least 2 numeric columns for heatmap'}, status=400)
-                    
-            elif chart_type == 'bar':
-                if len(df.columns) >= 2:
-                    cat_cols = df.select_dtypes(include=['object']).columns
-                    num_cols = df.select_dtypes(include=[np.number]).columns
-                    
-                    if len(cat_cols) > 0 and len(num_cols) > 0:
-                        grouped = df.groupby(cat_cols[0])[num_cols[0]].sum().reset_index()
-                        sns.barplot(data=grouped, x=cat_cols[0], y=num_cols[0], ax=ax)
-                        ax.set_title(f'Bar Chart: {num_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
-                        chart_explanation = f"This bar chart shows the total {num_cols[0]} for each category of {cat_cols[0]}."
-                    else:
-                        sns.barplot(data=df, x=df.columns[0], y=df.columns[1], ax=ax)
-                        ax.set_title(f'Bar Chart: {df.columns[1]} by {df.columns[0]}', fontsize=16, fontweight='bold')
-                        chart_explanation = f"This bar chart shows {df.columns[1]} values for each {df.columns[0]}."
-                else:
-                    return JsonResponse({'error': 'Need at least 2 columns for bar chart'}, status=400)
-                    
-            elif chart_type == 'line':
-                if len(df.columns) >= 2:
-                    sns.lineplot(data=df, x=df.columns[0], y=df.columns[1], ax=ax, marker='o')
-                    ax.set_title(f'Line Chart: {df.columns[1]} vs {df.columns[0]}', fontsize=16, fontweight='bold')
-                    chart_explanation = f"This line chart shows the trend of {df.columns[1]} over {df.columns[0]}."
-                else:
-                    return JsonResponse({'error': 'Need at least 2 columns for line chart'}, status=400)
-                    
-            elif chart_type == 'pie':
-                cat_cols = df.select_dtypes(include=['object']).columns
-                if len(cat_cols) > 0:
-                    value_counts = df[cat_cols[0]].value_counts()
-                    if len(value_counts) > 10:
-                        value_counts = value_counts.head(10)
-                    colors = plt.cm.Set3(range(len(value_counts)))
-                    wedges, texts, autotexts = ax.pie(value_counts.values, labels=value_counts.index, 
-                                                     autopct='%1.1f%%', colors=colors, startangle=90)
-                    ax.set_title(f'Pie Chart: Distribution of {cat_cols[0]}', fontsize=16, fontweight='bold')
-                    chart_explanation = f"This pie chart shows the distribution of {cat_cols[0]} categories."
-                else:
-                    return JsonResponse({'error': 'Need at least 1 categorical column for pie chart'}, status=400)
-                    
-            elif chart_type == 'histogram':
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    ax.hist(df[numeric_cols[0]].dropna(), bins=30, alpha=0.7, color='skyblue', edgecolor='black')
-                    ax.set_title(f'Histogram: {numeric_cols[0]}', fontsize=16, fontweight='bold')
-                    ax.set_xlabel(numeric_cols[0])
-                    ax.set_ylabel('Frequency')
-                    chart_explanation = f"This histogram shows the frequency distribution of {numeric_cols[0]}."
-                else:
-                    return JsonResponse({'error': 'Need at least 1 numeric column for histogram'}, status=400)
-                    
-            elif chart_type == 'violin':
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    cat_cols = df.select_dtypes(include=['object']).columns
-                    if len(cat_cols) > 0:
-                        sns.violinplot(data=df, x=cat_cols[0], y=numeric_cols[0], ax=ax)
-                        ax.set_title(f'Violin Plot: {numeric_cols[0]} by {cat_cols[0]}', fontsize=16, fontweight='bold')
-                        chart_explanation = f"This violin plot shows the distribution shape of {numeric_cols[0]} across {cat_cols[0]} categories."
-                    else:
-                        sns.violinplot(data=df[numeric_cols], ax=ax)
-                        ax.set_title('Violin Plot of Numeric Variables', fontsize=16, fontweight='bold')
-                        chart_explanation = "This violin plot shows the distribution shape of numeric variables."
-                else:
-                    return JsonResponse({'error': 'Need at least 1 numeric column for violin plot'}, status=400)
-                    
-            elif chart_type == 'density':
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    for col in numeric_cols[:3]:
-                        sns.kdeplot(data=df, x=col, ax=ax, label=col)
-                    ax.set_title('Density Plot of Numeric Variables', fontsize=16, fontweight='bold')
-                    ax.legend()
-                    chart_explanation = "This density plot shows the probability density function of numeric variables."
-                else:
-                    return JsonResponse({'error': 'Need at least 1 numeric column for density plot'}, status=400)
-                    
-            elif chart_type == 'pair':
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) >= 2:
-                    plt.close()
-                    cols_to_plot = numeric_cols[:4]
-                    pair_plot = sns.pairplot(df[cols_to_plot])
-                    pair_plot.fig.suptitle('Pair Plot of Numeric Variables', y=1.02, fontsize=16, fontweight='bold')
-                    buffer = BytesIO()
-                    pair_plot.fig.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-                    buffer.seek(0)
-                    plot_data = buffer.getvalue()
-                    buffer.close()
-                    plt.close()
-                    plot_url = base64.b64encode(plot_data).decode()
-                    chart_explanation = f"This pair plot shows relationships between all numeric variables: {', '.join(cols_to_plot)}."
-                    skip_normal_processing = True
-                else:
-                    return JsonResponse({'error': 'Need at least 2 numeric columns for pair plot'}, status=400)
-            
-            if not skip_normal_processing:
-                ax.tick_params(axis='x', rotation=45)
-                plt.tight_layout()
-                buffer = BytesIO()
-                plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-                buffer.seek(0)
-                plot_data = buffer.getvalue()
-                buffer.close()
-                plt.close()
-                plot_url = base64.b64encode(plot_data).decode()
-            
-            # Generate AI explanation using Groq
-            try:
-                client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-                data_summary = {
-                    'shape': df.shape,
-                    'columns': list(df.columns),
-                    'numeric_cols': list(df.select_dtypes(include=[np.number]).columns),
-                    'categorical_cols': list(df.select_dtypes(include=['object']).columns),
-                    'sample_data': df.head(3).to_dict('records')
+            if action == 'get_columns':
+                # Return available columns for axis selection
+                query_results = data.get('query_results', [])
+                columns = data.get('columns', [])
+                
+                print(f"Query results length: {len(query_results)}")  # Debug log
+                print(f"Columns: {columns}")  # Debug log
+                
+                if not query_results or not columns:
+                    return JsonResponse({'error': 'No data provided'}, status=400)
+                
+                df = pd.DataFrame(query_results, columns=columns)
+                
+                # Categorize columns
+                numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+                categorical_columns = df.select_dtypes(include=['object']).columns.tolist()
+                datetime_columns = []
+                
+                # Try to detect datetime columns
+                for col in categorical_columns[:]:  # Use slice to avoid modifying list while iterating
+                    try:
+                        sample_data = df[col].dropna().iloc[:5]
+                        if len(sample_data) > 0:
+                            pd.to_datetime(sample_data)
+                            datetime_columns.append(col)
+                            categorical_columns.remove(col)
+                    except:
+                        pass
+                
+                column_info = {
+                    'numeric': numeric_columns,
+                    'categorical': categorical_columns,
+                    'datetime': datetime_columns,
+                    'all': columns
                 }
-                prompt = f"""
-                Analyze this {chart_type} chart and provide insights:
                 
-                Data Summary:
-                - Shape: {data_summary['shape']} (rows, columns)
-                - Columns: {data_summary['columns']}
-                - Sample data: {data_summary['sample_data']}
+                print(f"Column info: {column_info}")  # Debug log
                 
-                Chart Type: {chart_type}
-                Basic Description: {chart_explanation}
-                
-                Please provide:
-                1. Key insights from the visualization
-                2. Notable patterns or trends
-                3. Potential business implications
-                4. Any anomalies or interesting observations
-                
-                Keep the analysis concise but insightful (2-3 paragraphs max).
-                """
-                chat_completion = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.1-8b-instant",
-                    temperature=0.3,
-                    max_tokens=500
-                )
-                ai_explanation = chat_completion.choices[0].message.content
-            except Exception as e:
-                ai_explanation = f"Chart generated successfully. {chart_explanation}"
+                return JsonResponse({
+                    'success': True,
+                    'columns': column_info
+                })
             
-            # ---- Save to session for report builder ----
-            save_visualization(
-                request,
-                f"{chart_type.title()} Chart",
-                f'data:image/png;base64,{plot_url}',
-                ai_explanation
-            )
-            # -------------------------------------------
-
-            return JsonResponse({
-                'success': True,
-                'chart_image': f'data:image/png;base64,{plot_url}',
-                'explanation': ai_explanation,
-                'chart_type': chart_type
-            })
-            
+            elif action == 'generate_chart':
+                # Generate Chart.js configuration
+                chart_type = data.get('chart_type', 'bar')
+                x_axis = data.get('x_axis', [])
+                y_axis = data.get('y_axis', [])
+                query_results = data.get('query_results', [])
+                columns = data.get('columns', [])
+                
+                if not query_results or not columns:
+                    return JsonResponse({'error': 'No data provided'}, status=400)
+                
+                if not x_axis or not y_axis:
+                    return JsonResponse({'error': 'Please select both X and Y axis variables'}, status=400)
+                
+                df = pd.DataFrame(query_results, columns=columns)
+                
+                # Generate Chart.js configuration
+                chart_config = generate_chartjs_config(df, chart_type, x_axis, y_axis)
+                
+                return JsonResponse({
+                    'success': True,
+                    'chart_config': chart_config
+                })
+                
         except Exception as e:
-            return JsonResponse({'error': f'Chart generation failed: {str(e)}'}, status=500)
+            return JsonResponse({'error': str(e)}, status=500)
     
-    return JsonResponse({'error': 'Only POST method allowed'}, status=405)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def generate_chartjs_config(df, chart_type, x_axis, y_axis):
+    """Generate Chart.js configuration based on selected axes and chart type"""
+    
+    # Handle multiple X and Y axes
+    x_col = x_axis[0] if isinstance(x_axis, list) else x_axis
+    y_cols = y_axis if isinstance(y_axis, list) else [y_axis]
+    
+    # Prepare data based on chart type
+    if chart_type in ['bar', 'line']:
+        # Group data if needed
+        if df[x_col].dtype == 'object':  # Categorical X-axis
+            grouped = df.groupby(x_col)[y_cols].agg('mean').reset_index()
+            labels = grouped[x_col].tolist()
+            
+            datasets = []
+            colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF']
+            
+            for i, y_col in enumerate(y_cols):
+                datasets.append({
+                    'label': y_col,
+                    'data': grouped[y_col].tolist(),
+                    'backgroundColor': colors[i % len(colors)] if chart_type == 'bar' else 'transparent',
+                    'borderColor': colors[i % len(colors)],
+                    'borderWidth': 2,
+                    'fill': False
+                })
+        else:  # Numeric X-axis
+            labels = df[x_col].tolist()
+            datasets = []
+            colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+            
+            for i, y_col in enumerate(y_cols):
+                datasets.append({
+                    'label': y_col,
+                    'data': df[y_col].tolist(),
+                    'backgroundColor': colors[i % len(colors)] if chart_type == 'bar' else 'transparent',
+                    'borderColor': colors[i % len(colors)],
+                    'borderWidth': 2,
+                    'fill': False
+                })
+    
+    elif chart_type == 'scatter':
+        datasets = []
+        colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+        
+        for i, y_col in enumerate(y_cols):
+            scatter_data = [{'x': x, 'y': y} for x, y in zip(df[x_col], df[y_col])]
+            datasets.append({
+                'label': f'{y_col} vs {x_col}',
+                'data': scatter_data,
+                'backgroundColor': colors[i % len(colors)],
+                'borderColor': colors[i % len(colors)],
+            })
+        labels = []
+    
+    elif chart_type == 'pie':
+        # For pie charts, use first Y column and group by X
+        if df[x_col].dtype == 'object':
+            grouped = df.groupby(x_col)[y_cols[0]].sum().reset_index()
+            labels = grouped[x_col].tolist()
+            data = grouped[y_cols[0]].tolist()
+        else:
+            # If X is numeric, create bins
+            df[f'{x_col}_binned'] = pd.cut(df[x_col], bins=5, precision=0)
+            grouped = df.groupby(f'{x_col}_binned')[y_cols[0]].sum().reset_index()
+            labels = [str(interval) for interval in grouped[f'{x_col}_binned']]
+            data = grouped[y_cols[0]].tolist()
+        
+        datasets = [{
+            'data': data,
+            'backgroundColor': ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF']
+        }]
+    
+    # Chart.js configuration
+    config = {
+        'type': chart_type,
+        'data': {
+            'labels': labels,
+            'datasets': datasets
+        },
+        'options': {
+            'responsive': True,
+            'maintainAspectRatio': False,
+            'scales': {},
+            'plugins': {
+                'legend': {
+                    'display': True,
+                    'position': 'top'
+                },
+                'title': {
+                    'display': True,
+                    'text': f'{chart_type.title()} Chart: {", ".join(y_cols)} vs {x_col}'
+                }
+            }
+        }
+    }
+    
+    # Add scales for non-pie charts
+    if chart_type != 'pie':
+        config['options']['scales'] = {
+            'x': {
+                'display': True,
+                'title': {
+                    'display': True,
+                    'text': x_col
+                }
+            },
+            'y': {
+                'display': True,
+                'title': {
+                    'display': True,
+                    'text': ', '.join(y_cols)
+                }
+            }
+        }
+    
+    return config
+
+
+def generate_chart(request):
+    """Legacy chart generation - redirects to new chart builder"""
+    return JsonResponse({'error': 'Please use the new chart builder interface'}, status=400)
+
+
+def generate_plotly_config(df, chart_type, x_axis, y_axis):
+    """
+    Generate Plotly.js configuration as a JSON object based on selected axes and chart type.
+    """
+    # Handle multiple X and Y axes
+    x_col = x_axis[0] if isinstance(x_axis, list) else x_axis
+    y_cols = y_axis if isinstance(y_axis, list) else [y_axis]
+
+    fig = go.Figure()
+
+    if chart_type == 'bar':
+        # Group data for bar chart if x-axis is categorical
+        if df[x_col].dtype == 'object':
+            grouped_df = df.groupby(x_col)[y_cols].mean().reset_index()
+            for y_col in y_cols:
+                fig.add_trace(go.Bar(x=grouped_df[x_col], y=grouped_df[y_col], name=y_col))
+        else:
+            for y_col in y_cols:
+                fig.add_trace(go.Bar(x=df[x_col], y=df[y_col], name=y_col))
+        
+        fig.update_layout(title=f'Bar Chart: {", ".join(y_cols)} vs {x_col}', xaxis_title=x_col, yaxis_title=", ".join(y_cols))
+        
+    elif chart_type == 'line':
+        for y_col in y_cols:
+            fig.add_trace(go.Scatter(x=df[x_col], y=df[y_col], mode='lines+markers', name=y_col))
+        
+        fig.update_layout(title=f'Line Chart: {", ".join(y_cols)} vs {x_col}', xaxis_title=x_col, yaxis_title=", ".join(y_cols))
+        
+    elif chart_type == 'scatter':
+        for y_col in y_cols:
+            fig.add_trace(go.Scatter(x=df[x_col], y=df[y_col], mode='markers', name=y_col))
+        
+        fig.update_layout(title=f'Scatter Plot: {", ".join(y_cols)} vs {x_col}', xaxis_title=x_col, yaxis_title=", ".join(y_cols))
+        
+    elif chart_type == 'pie':
+        # Plotly.py supports pie charts natively
+        if df[x_col].dtype == 'object':
+            grouped = df.groupby(x_col)[y_cols[0]].sum().reset_index()
+            fig = px.pie(grouped, values=y_cols[0], names=x_col, title=f'Pie Chart: {y_cols[0]} by {x_col}')
+        else:
+            # For numeric x-axis, create bins and then plot
+            df[f'{x_col}_binned'] = pd.cut(df[x_col], bins=5, precision=0)
+            grouped = df.groupby(f'{x_col}_binned')[y_cols[0]].sum().reset_index()
+            grouped[f'{x_col}_binned'] = grouped[f'{x_col}_binned'].astype(str)
+            fig = px.pie(grouped, values=y_cols[0], names=f'{x_col}_binned', title=f'Pie Chart: {y_cols[0]} by {x_col}')
+
+    elif chart_type == 'heatmap':
+        # Heatmaps require a Z-axis, usually derived from a pivot table
+        # We'll assume y_cols has the row and column names, and a value column
+        if len(y_cols) < 2:
+            return {'error': 'Heatmap requires at least two Y-axis columns and a value column.'}
+        
+        # We need three columns: x, y, and z (value)
+        z_col = y_cols[0]
+        y_col_heatmap = y_cols[1]
+        
+        fig = go.Figure(data=go.Heatmap(
+                z=df[z_col],
+                x=df[x_col],
+                y=df[y_col_heatmap],
+                colorscale='Viridis'))
+        
+        fig.update_layout(
+            title=f'Heatmap: {z_col} vs {x_col} and {y_col_heatmap}',
+            xaxis_title=x_col,
+            yaxis_title=y_col_heatmap)
+            
+    elif chart_type == 'bubble':
+        # Bubble charts require a size parameter, which we'll assume is the second y-column
+        if len(y_cols) < 2:
+            return {'error': 'Bubble chart requires at least two Y-axis columns for value and size.'}
+        
+        fig = go.Figure(data=[go.Scatter(
+            x=df[x_col],
+            y=df[y_cols[0]],
+            mode='markers',
+            marker=dict(
+                size=df[y_cols[1]], # Use the second y-column for bubble size
+                sizemode='area',
+                sizeref=2.*max(df[y_cols[1]])/(40.**2), # Adjust sizing
+                sizemin=4
+            )
+        )])
+        
+        fig.update_layout(title=f'Bubble Chart: {y_cols[0]} vs {x_col} (Size by {y_cols[1]})',
+                          xaxis_title=x_col,
+                          yaxis_title=y_cols[0])
+
+    else:
+        return {'error': 'Unsupported chart type'}
+    
+    # Convert the figure to a JSON serializable object
+    return json.loads(fig.to_json())
