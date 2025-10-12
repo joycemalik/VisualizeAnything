@@ -1331,6 +1331,10 @@
           <img src="{% static 'ai.png' %}" alt="ai" class="btn-icon"/>
           Visualize
         </button>
+        <button class="action-btn" onclick="openAdvancedVisualization()">
+          <img src="{% static 'chart.png' %}" alt="chart" class="btn-icon"/>
+          Advanced Charts
+        </button>
         <button class="action-btn secondary" onclick="toggleDatasetPreview()">
           View Dataset
         </button>
@@ -1493,6 +1497,11 @@
 <script>
 function openReportBuilder() {
   window.open("{% url 'report_builder' %}", "_blank");
+}
+
+function openAdvancedVisualization() {
+  const datasetName = "{{ dataset.name|escapejs }}";
+  window.open("{% url 'advanced_viz' %}", "_blank");
 }
 </script>
 
@@ -2494,6 +2503,32 @@ function renderChart(config) {
   
   // Create new chart
   currentChartInstance = new Chart(ctx, config);
+}
+
+// Notification function
+function showNotification(message, type) {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
+    border-radius: 5px;
+    color: white;
+    font-weight: bold;
+    z-index: 1000;
+    transition: opacity 0.3s ease;
+    ${type === 'success' ? 'background: #10b981;' : 'background: #ef4444;'}
+  `;
+  notification.textContent = message;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
+  }, 3000);
 }
 
 </script>
