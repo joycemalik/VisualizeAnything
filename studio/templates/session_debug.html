@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Debug</title>
+</head>
+<body>
+    <h1>Session Debug Info</h1>
+    <h2>Session Keys:</h2>
+    <ul>
+    {% for key in session_keys %}
+        <li><strong>{{ key }}:</strong> {{ session|get_item:key|truncatechars:100 }}</li>
+    {% endfor %}
+    </ul>
+    
+    <h2>Dataset Info:</h2>
+    <p><strong>Dataset Path:</strong> {{ dataset_path }}</p>
+    <p><strong>Dataset Display Name:</strong> {{ dataset_display_name }}</p>
+    
+    <br>
+    <a href="javascript:history.back()">Go Back</a>
+</body>
+</html>

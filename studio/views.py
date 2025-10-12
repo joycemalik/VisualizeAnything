@@ -37,6 +37,73 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 TEMP_FILES = {}
 
+def cleanup_session_data_from_supabase(session):
+    """Delete all session-related data from Supabase storage"""
+    try:
+        # Get session-specific files to delete
+        session_files = []
+        
+        # Check if there's a current dataset to delete
+        if 'current_dataset_path' in session:
+            dataset_path = session['current_dataset_path']
+            # Extract filename from path for Supabase
+            if '/' in dataset_path:
+                filename = dataset_path.split('/')[-1]
+                session_files.append(f"sessions/{filename}")
+        
+        # Also check for any session-specific uploaded files
+        if 'uploaded_files' in session:
+            for file_info in session['uploaded_files']:
+                if isinstance(file_info, dict) and 'supabase_path' in file_info:
+                    session_files.append(file_info['supabase_path'])
+                elif isinstance(file_info, str):
+                    session_files.append(f"sessions/{file_info}")
+        
+        # Delete files from Supabase
+        if session_files:
+            for file_path in session_files:
+                try:
+                    supabase.storage.from_(SUPABASE_BUCKET).remove([file_path])
+                    print(f"✅ Deleted from Supabase: {file_path}")
+                except Exception as file_error:
+                    print(f"⚠️ Failed to delete {file_path}: {file_error}")
+        
+        print(f"🧹 Cleaned up {len(session_files)} files from Supabase")
+        
+    except Exception as e:
+        print(f"❌ Error cleaning up Supabase data: {e}")
+
+def complete_session_cleanup(session):
+    """Complete cleanup of session data including Supabase storage"""
+    try:
+        # First, clean up Supabase data
+        cleanup_session_data_from_supabase(session)
+        
+        # Then clear all session data
+        session_keys_to_clear = [
+            'chat_history', 'visualizations', 'tables', 'report_blocks', 
+            'query_results', 'current_dataset_path', 'uploaded_files',
+            'dataset_info', 'analysis_results', 'generated_charts',
+            'ai_responses', 'user_queries', 'session_start_time'
+        ]
+        
+        cleared_count = 0
+        for key in session_keys_to_clear:
+            if key in session:
+                del session[key]
+                cleared_count += 1
+        
+        # Force session save
+        session.modified = True
+        session.save()
+        
+        print(f"🧹 Completed session cleanup - cleared {cleared_count} session variables")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in complete session cleanup: {e}")
+        return False
+
 def cleanup_old_files():
     try:
         files = supabase.storage.from_(SUPABASE_BUCKET).list("sessions/")
@@ -68,7 +135,6 @@ def clear_session_data(request):
     print("✅ Cleared previous session data for fresh start")
 
 def index(request):
-    cleanup_old_files()
     return render(request, "index.html", {"datasets": []})
 
 
@@ -77,8 +143,6 @@ def dataset_list(request):
 
 
 def upload_dataset(request):
-    cleanup_old_files()  # delete old session files first
-
     if request.method == "POST" and request.FILES.get("file"):
         file = request.FILES["file"]
 
@@ -115,10 +179,24 @@ def upload_dataset(request):
             )
             print(f"✅ Uploaded to Supabase: {path_in_bucket}")
 
-            # Store both in session
+            # Store both in session for cleanup tracking
             TEMP_FILES[request.session.session_key] = path_in_bucket
             request.session["dataset_path"] = path_in_bucket
-            request.session["dataset_display_name"] = display_name  
+            request.session["dataset_display_name"] = display_name
+            request.session["current_dataset_path"] = path_in_bucket  # For cleanup
+            
+            # Track uploaded files for session cleanup
+            if 'uploaded_files' not in request.session:
+                request.session['uploaded_files'] = []
+            
+            # Add file info for cleanup tracking
+            file_info = {
+                'supabase_path': path_in_bucket,
+                'display_name': display_name,
+                'upload_time': timestamp
+            }
+            request.session['uploaded_files'].append(file_info)
+            request.session.modified = True  
 
             messages.success(request, f"File uploaded successfully: {display_name}")
 
@@ -151,13 +229,13 @@ def generate_data_profile(df):
     
     for col in df.columns:
         col_info = {
-            'name': col,
+            'name': str(col),
             'dtype': str(df[col].dtype),
-            'missing_count': df[col].isnull().sum(),
-            'missing_percentage': (df[col].isnull().sum() / len(df)) * 100,
-            'unique_count': df[col].nunique(),
-            'cardinality_ratio': df[col].nunique() / len(df),
-            'sample_values': df[col].dropna().head(3).tolist() if len(df[col].dropna()) > 0 else []
+            'missing_count': int(df[col].isnull().sum()),
+            'missing_percentage': float((df[col].isnull().sum() / len(df)) * 100),
+            'unique_count': int(df[col].nunique()),
+            'cardinality_ratio': float(df[col].nunique() / len(df)),
+            'sample_values': [str(x) for x in df[col].dropna().head(3).tolist()] if len(df[col].dropna()) > 0 else []
         }
         
         # Check if column is constant
@@ -171,12 +249,12 @@ def generate_data_profile(df):
         # Type-specific stats
         if df[col].dtype in ['int64', 'float64']:
             col_info.update({
-                'min': df[col].min() if not df[col].isnull().all() else None,
-                'max': df[col].max() if not df[col].isnull().all() else None,
-                'mean': df[col].mean() if not df[col].isnull().all() else None,
-                'median': df[col].median() if not df[col].isnull().all() else None,
-                'std': df[col].std() if not df[col].isnull().all() else None,
-                'has_outliers': detect_outliers(df[col]) if not df[col].isnull().all() else False
+                'min': float(df[col].min()) if not df[col].isnull().all() else None,
+                'max': float(df[col].max()) if not df[col].isnull().all() else None,
+                'mean': float(df[col].mean()) if not df[col].isnull().all() else None,
+                'median': float(df[col].median()) if not df[col].isnull().all() else None,
+                'std': float(df[col].std()) if not df[col].isnull().all() else None,
+                'has_outliers': bool(detect_outliers(df[col])) if not df[col].isnull().all() else False
             })
         elif df[col].dtype == 'object':
             if not df[col].isnull().all():
@@ -189,6 +267,9 @@ def generate_data_profile(df):
         
         profile['columns'].append(col_info)
         profile['column_stats'][col] = col_info
+    
+    # Convert all numpy/pandas types to JSON serializable types
+    profile = make_json_serializable(profile)
     
     return profile
 
@@ -204,6 +285,32 @@ def detect_outliers(series):
         return len(outliers) > 0
     except:
         return False
+
+def make_json_serializable(obj):
+    """Convert numpy/pandas types to JSON serializable types"""
+    import numpy as np
+    import pandas as pd
+    
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        if pd.isna(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(item) for item in obj]
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
 
 
 def analyze_dataset_context(df):
@@ -308,15 +415,36 @@ def analyze_dataset_context(df):
 def auto_visualize_dataset(request):
     """Generate automatic visualizations for the dataset and save each to session"""
     if request.method == 'POST':
+        # Set processing flag to prevent cleanup during operation
+        request.session['auto_viz_processing'] = True
+        request.session.modified = True
+        
         path_in_bucket = request.session.get("dataset_path")
         
+        print(f"DEBUG - Auto-visualize called with dataset_path: {path_in_bucket}")
+        print(f"DEBUG - Session keys: {list(request.session.keys())}")
+        
         if not path_in_bucket:
-            return JsonResponse({'error': 'No dataset found'}, status=400)
+            request.session['auto_viz_processing'] = False
+            request.session.modified = True
+            return JsonResponse({'error': 'No dataset found in session. Please upload a dataset first.'}, status=400)
         
         try:
-            # Load dataset
-            res = supabase.storage.from_(SUPABASE_BUCKET).download(path_in_bucket)
+            print(f"DEBUG - Attempting to download from Supabase: {path_in_bucket}")
+            # Load dataset with better error handling
+            try:
+                res = supabase.storage.from_(SUPABASE_BUCKET).download(path_in_bucket)
+                print(f"DEBUG - Downloaded {len(res)} bytes from Supabase")
+            except Exception as supabase_error:
+                print(f"ERROR - Supabase download failed: {supabase_error}")
+                request.session['auto_viz_processing'] = False
+                request.session.modified = True
+                return JsonResponse({
+                    'error': f'Dataset file not found in storage. The file may have been cleaned up. Please re-upload your dataset. Error: {str(supabase_error)}'
+                }, status=404)
+            
             df = pd.read_csv(io.BytesIO(res))
+            print(f"DEBUG - Loaded dataframe with {len(df)} rows, {len(df.columns)} columns")
             
             # Validate dataset size for visualization
             if len(df) > 10000:
@@ -368,10 +496,16 @@ def auto_visualize_dataset(request):
                     continue
             
             if not charts:
+                request.session['auto_viz_processing'] = False
+                request.session.modified = True
                 return JsonResponse({
                     'error': 'Could not generate any visualizations for this dataset. Please try manual chart creation.',
                     'analysis': analysis
                 })
+            
+            # Clear processing flag on success
+            request.session['auto_viz_processing'] = False
+            request.session.modified = True
             
             return JsonResponse({
                 'success': True,
@@ -381,19 +515,45 @@ def auto_visualize_dataset(request):
             })
             
         except Exception as e:
-            return JsonResponse({'error': f'Auto-visualization failed: {str(e)}'}, status=500)
+            # Clear processing flag on error
+            request.session['auto_viz_processing'] = False
+            request.session.modified = True
+            
+            print(f"ERROR - Auto-visualization failed: {str(e)}")
+            print(f"ERROR - Exception type: {type(e)}")
+            import traceback
+            print(f"ERROR - Traceback: {traceback.format_exc()}")
+            return JsonResponse({
+                'error': f'Auto-visualization failed: {str(e)}. This may be due to session cleanup. Please try re-uploading your dataset.'
+            }, status=500)
     
     return JsonResponse({'error': 'Only POST method allowed'}, status=405)
 
 def generate_auto_chart(df, chart_type, description):
-    """Generate automatic Chart.js configuration based on data analysis"""
+    """Generate automatic charts using pure Python (Matplotlib/Seaborn) - NO Chart.js"""
     try:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import base64
+        from io import BytesIO
+        import warnings
+        warnings.filterwarnings('ignore')
+        
+        # Set style for professional charts
+        plt.style.use('dark_background')
+        sns.set_palette("viridis")  # Changed from husl to viridis for better auto-charts
+        
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         categorical_cols = df.select_dtypes(include=['object']).columns
         
         # Limit data size for better performance and readability
         max_categories = 10
         max_data_points = 100
+        
+        # Create figure
+        plt.figure(figsize=(10, 6))
         
         if chart_type == 'bar' and len(categorical_cols) > 0 and len(numeric_cols) > 0:
             # Bar chart of categorical vs numeric
@@ -405,46 +565,22 @@ def generate_auto_chart(df, chart_type, description):
             filtered_df = df[df[cat_col].isin(top_categories.index)]
             
             # Group and aggregate data
-            grouped = filtered_df.groupby(cat_col)[num_col].mean().round(2).reset_index()
+            grouped = filtered_df.groupby(cat_col)[num_col].mean().round(2)
             
-            # Further limit if still too many data points
-            if len(grouped) > max_categories:
-                grouped = grouped.head(max_categories)
+            # Create bar chart
+            bars = plt.bar(range(len(grouped)), grouped.values, color='#7059f2', alpha=0.8)
+            plt.xticks(range(len(grouped)), grouped.index, rotation=45, ha='right')
+            plt.xlabel(cat_col)
+            plt.ylabel(f'Average {num_col}')
+            plt.title(f'Top {len(grouped)} {cat_col} by Average {num_col}', fontsize=14, fontweight='bold')
             
-            return {
-                'chart_config': {
-                    'type': 'bar',
-                    'data': {
-                        'labels': grouped[cat_col].tolist(),
-                        'datasets': [{
-                            'label': f'Average {num_col}',
-                            'data': grouped[num_col].tolist(),
-                            'backgroundColor': '#7059f2ff',
-                            'borderColor': '#533cd0ff',
-                            'borderWidth': 1
-                        }]
-                    },
-                    'options': {
-                        'responsive': True,
-                        'plugins': {
-                            'title': {
-                                'display': True,
-                                'text': f'Top {len(grouped)} {cat_col} by Average {num_col}'
-                            },
-                            'legend': {
-                                'display': False
-                            }
-                        },
-                        'scales': {
-                            'y': {
-                                'beginAtZero': True
-                            }
-                        }
-                    }
-                },
-                'image': generate_chart_image('bar', grouped[cat_col].tolist(), grouped[num_col].tolist(), f'Top {len(grouped)} {cat_col}'),
-                'explanation': f'Bar chart showing top {len(grouped)} categories of {cat_col} by average {num_col}. Limited to most significant categories for clarity.'
-            }
+            # Add value labels on bars
+            for bar, value in zip(bars, grouped.values):
+                plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01*max(grouped.values),
+                        f'{value:.1f}', ha='center', va='bottom', fontsize=9)
+            
+            plt.tight_layout()
+            explanation = f'Bar chart showing top {len(grouped)} categories of {cat_col} by average {num_col}. Limited to most significant categories for clarity.'
             
         elif chart_type == 'scatter' and len(numeric_cols) >= 2:
             # Scatter plot of two numeric columns
@@ -462,160 +598,84 @@ def generate_auto_chart(df, chart_type, description):
                 upper_bound = Q3 + 1.5 * IQR
                 sample_df = sample_df[(sample_df[col] >= lower_bound) & (sample_df[col] <= upper_bound)]
             
-            scatter_data = [{'x': round(x, 2), 'y': round(y, 2)} 
-                          for x, y in zip(sample_df[x_col], sample_df[y_col]) 
-                          if pd.notna(x) and pd.notna(y)]
+            # Create scatter plot
+            plt.scatter(sample_df[x_col], sample_df[y_col], color='#7059f2', alpha=0.6, s=30)
+            plt.xlabel(x_col)
+            plt.ylabel(y_col)
+            plt.title(f'Scatter Plot: {x_col} vs {y_col}', fontsize=14, fontweight='bold')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
             
-            return {
-                'chart_config': {
-                    'type': 'scatter',
-                    'data': {
-                        'datasets': [{
-                            'label': f'{y_col} vs {x_col}',
-                            'data': scatter_data,
-                            'backgroundColor': '#7059f2ff',
-                            'borderColor': '#533cd0ff',
-                            'pointRadius': 4
-                        }]
-                    },
-                    'options': {
-                        'responsive': True,
-                        'plugins': {
-                            'title': {
-                                'display': True,
-                                'text': f'{y_col} vs {x_col} Relationship'
-                            }
-                        },
-                        'scales': {
-                            'x': {
-                                'title': {
-                                    'display': True,
-                                    'text': x_col
-                                }
-                            },
-                            'y': {
-                                'title': {
-                                    'display': True,
-                                    'text': y_col
-                                }
-                            }
-                        }
-                    }
-                },
-                'image': generate_chart_image('scatter', [d['x'] for d in scatter_data], [d['y'] for d in scatter_data], f'{y_col} vs {x_col}'),
-                'explanation': f'Scatter plot showing relationship between {x_col} and {y_col}. Sample of {len(scatter_data)} data points, outliers removed for clarity.'
-            }
+            explanation = f'Scatter plot showing relationship between {x_col} and {y_col}. Data sampled to {len(sample_df)} points and outliers removed for better visualization.'
             
-        elif chart_type in ['histogram', 'line'] and len(numeric_cols) > 0:
-            # Histogram for numeric distribution
+        elif chart_type == 'histogram' and len(numeric_cols) > 0:
+            # Histogram of first numeric column
             num_col = numeric_cols[0]
             
-            # Remove outliers and create bins
-            data_series = df[num_col].dropna()
-            Q1 = data_series.quantile(0.25)
-            Q3 = data_series.quantile(0.75)
+            # Remove outliers
+            Q1 = df[num_col].quantile(0.25)
+            Q3 = df[num_col].quantile(0.75)
             IQR = Q3 - Q1
             lower_bound = Q1 - 1.5 * IQR
             upper_bound = Q3 + 1.5 * IQR
-            filtered_data = data_series[(data_series >= lower_bound) & (data_series <= upper_bound)]
+            filtered_data = df[(df[num_col] >= lower_bound) & (df[num_col] <= upper_bound)][num_col]
             
-            # Create histogram bins
-            bins = 15  # Reasonable number of bins
-            hist, bin_edges = np.histogram(filtered_data, bins=bins)
-            bin_centers = [(bin_edges[i] + bin_edges[i+1]) / 2 for i in range(len(bin_edges)-1)]
+            # Create histogram
+            plt.hist(filtered_data.dropna(), bins=min(30, len(filtered_data)//10), 
+                    color='#7059f2', alpha=0.7, edgecolor='white', linewidth=0.5)
+            plt.xlabel(num_col)
+            plt.ylabel('Frequency')
+            plt.title(f'Distribution of {num_col}', fontsize=14, fontweight='bold')
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
             
-            return {
-                'chart_config': {
-                    'type': 'bar',
-                    'data': {
-                        'labels': [f'{round(bc, 2)}' for bc in bin_centers],
-                        'datasets': [{
-                            'label': f'Frequency',
-                            'data': hist.tolist(),
-                            'backgroundColor': '#7059f2ff',
-                            'borderColor': '#533cd0ff',
-                            'borderWidth': 1
-                        }]
-                    },
-                    'options': {
-                        'responsive': True,
-                        'plugins': {
-                            'title': {
-                                'display': True,
-                                'text': f'Distribution of {num_col}'
-                            },
-                            'legend': {
-                                'display': False
-                            }
-                        },
-                        'scales': {
-                            'x': {
-                                'title': {
-                                    'display': True,
-                                    'text': num_col
-                                }
-                            },
-                            'y': {
-                                'title': {
-                                    'display': True,
-                                    'text': 'Frequency'
-                                },
-                                'beginAtZero': True
-                            }
-                        }
-                    }
-                },
-                'image': generate_chart_image('histogram', bin_centers, hist.tolist(), f'Distribution of {num_col}'),
-                'explanation': f'Histogram showing the distribution of {num_col}. Outliers removed and data grouped into {bins} bins for better readability.'
-            }
+            explanation = f'Histogram showing distribution of {num_col}. Outliers removed for better visualization.'
             
-        elif chart_type == 'pie' and len(categorical_cols) > 0:
-            # Pie chart for categorical distribution
-            cat_col = categorical_cols[0]
-            
-            # Get top categories only
-            value_counts = df[cat_col].value_counts().head(8)  # Max 8 slices for readability
-            
-            # Group small categories as "Others"
-            if len(value_counts) < df[cat_col].nunique():
-                others_count = df[cat_col].value_counts().iloc[8:].sum()
-                if others_count > 0:
-                    value_counts['Others'] = others_count
-            
-            return {
-                'chart_config': {
-                    'type': 'pie',
-                    'data': {
-                        'labels': value_counts.index.tolist(),
-                        'datasets': [{
-                            'data': value_counts.values.tolist(),
-                            'backgroundColor': [
-                                '#7059f2ff', '#533cd0ff', '#3b82f6', '#10b981', 
-                                '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'
-                            ]
-                        }]
-                    },
-                    'options': {
-                        'responsive': True,
-                        'plugins': {
-                            'title': {
-                                'display': True,
-                                'text': f'Distribution of {cat_col}'
-                            },
-                            'legend': {
-                                'position': 'right'
-                            }
-                        }
-                    }
-                },
-                'image': generate_chart_image('pie', value_counts.index.tolist(), value_counts.values.tolist(), f'Distribution of {cat_col}'),
-                'explanation': f'Pie chart showing distribution of {cat_col}. Limited to top {len(value_counts)} categories for clarity.'
-            }
+        else:
+            # Fallback: Simple bar chart of column value counts
+            if len(categorical_cols) > 0:
+                cat_col = categorical_cols[0]
+                value_counts = df[cat_col].value_counts().head(max_categories)
+                
+                plt.bar(range(len(value_counts)), value_counts.values, color='#7059f2', alpha=0.8)
+                plt.xticks(range(len(value_counts)), value_counts.index, rotation=45, ha='right')
+                plt.xlabel(cat_col)
+                plt.ylabel('Count')
+                plt.title(f'Distribution of {cat_col}', fontsize=14, fontweight='bold')
+                plt.tight_layout()
+                
+                explanation = f'Bar chart showing distribution of {cat_col} values.'
+            else:
+                # If no categorical columns, show numeric distribution
+                if len(numeric_cols) > 0:
+                    num_col = numeric_cols[0]
+                    plt.hist(df[num_col].dropna(), bins=30, color='#7059f2', alpha=0.7)
+                    plt.xlabel(num_col)
+                    plt.ylabel('Frequency')
+                    plt.title(f'Distribution of {num_col}', fontsize=14, fontweight='bold')
+                    plt.tight_layout()
+                    explanation = f'Histogram showing distribution of {num_col}.'
+                else:
+                    plt.close()
+                    return None
         
-        return None
+        # Convert to base64 image
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        plt.close('all')  # Clean up
+        
+        return {
+            'image': f'data:image/png;base64,{image_base64}',
+            'explanation': explanation
+        }
         
     except Exception as e:
-        print(f"Error generating auto chart: {e}")
+        plt.close('all')  # Cleanup on error
+        print(f"Error generating Python chart: {e}")
         return None
 
 
@@ -659,6 +719,7 @@ def generate_chart_image(chart_type, x_data, y_data, title):
         return ""
 
 
+
 def dataset_preview(request, dataset_name):
     path_in_bucket = request.session.get("dataset_path")
     display_name = request.session.get("dataset_display_name", dataset_name)  # fallback
@@ -678,6 +739,9 @@ def dataset_preview(request, dataset_name):
 
         # Analyze dataset context and provide suggestions
         analysis = analyze_dataset_context(df)
+        
+        # Save dataset schema to session for report builder
+        save_dataset_schema(request, display_name, data_profile)
 
     except Exception as e:
         df = pd.DataFrame()
@@ -970,6 +1034,15 @@ def run_query(request, dataset_name):
             result_data,
             visualization_suggestion
         )
+        
+        # Also save as a standalone table for easy report inclusion
+        save_query_table(
+            request,
+            f"Query Results: {user_input[:50]}...",
+            result_data,
+            user_input,
+            sql_query
+        )
         # -------------------------------------------
 
         return JsonResponse({
@@ -1013,13 +1086,23 @@ def save_report(request, format):
             data = json.loads(request.body)
             blocks = data.get("blocks", [])
             
+            print(f"[SAVE_REPORT DEBUG] Received POST request for {format} format")
+            print(f"[SAVE_REPORT DEBUG] Number of blocks: {len(blocks)}")
+            
+            for i, block in enumerate(blocks):
+                print(f"[SAVE_REPORT DEBUG] Block {i}: {block.get('type', 'unknown')} - {list(block.keys())}")
+                if block.get('has_table'):
+                    print(f"[SAVE_REPORT DEBUG] Block {i} has table with {len(block.get('result_data', []))} rows")
+            
             # If no blocks provided, get from session
             if not blocks:
                 blocks = request.session.get('report_blocks', [])
+                print(f"[SAVE_REPORT DEBUG] Using session blocks: {len(blocks)}")
             
         else:
             # GET request - use session data
             blocks = request.session.get('report_blocks', [])
+            print(f"[SAVE_REPORT DEBUG] GET request, using session blocks: {len(blocks)}")
         
         if format == "pdf":
             return generate_comprehensive_pdf(blocks)
@@ -1029,6 +1112,9 @@ def save_report(request, format):
             return generate_report_image(blocks, format)
             
     except Exception as e:
+        print(f"[SAVE_REPORT DEBUG] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': f'Report generation failed: {str(e)}'}, status=500)
     
     return HttpResponse("Invalid format", status=400)
@@ -1036,6 +1122,8 @@ def save_report(request, format):
 
 def generate_comprehensive_pdf(blocks):
     """Generate a comprehensive PDF with chat history, figures, and styling"""
+    print(f"[PDF DEBUG] Generating PDF with {len(blocks)} blocks")
+    
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter, A4
@@ -1045,6 +1133,8 @@ def generate_comprehensive_pdf(blocks):
         from reportlab.pdfgen import canvas
         import tempfile
         import requests
+        import re
+        from html import unescape
     except ImportError as e:
         # Fallback to simple PDF generation if reportlab is not available
         print(f"ReportLab not available: {e}")
@@ -1106,23 +1196,89 @@ def generate_comprehensive_pdf(blocks):
         # Process blocks
         for i, block in enumerate(blocks):
             block_type = block.get('type', '')
+            print(f"[PDF DEBUG] Processing block {i}: {block_type}")
+            print(f"[PDF DEBUG] Block data: {block}")
             
             if block_type == 'chat_message':
                 sender = block.get('sender', 'User')
                 content = block.get('content', '')
+                has_table = block.get('has_table', False)
+                result_data = block.get('result_data', [])
+                
+                print(f"[PDF DEBUG] Chat message - Sender: {sender}, Has table: {has_table}, Result data length: {len(result_data) if result_data else 0}")
                 
                 if sender.lower() == 'user':
                     story.append(Paragraph(f"<b>User Question:</b>", user_style))
-                    story.append(Paragraph(content, user_style))
+                    # Clean HTML content for user messages
+                    clean_content = re.sub('<[^<]+?>', '', content) if content else ''
+                    story.append(Paragraph(clean_content, user_style))
                 else:
                     story.append(Paragraph(f"<b>AI Response:</b>", ai_style))
-                    story.append(Paragraph(content, ai_style))
+                    
+                    # Check if this AI message contains a table
+                    if has_table and result_data:
+                        print(f"[PDF DEBUG] Processing AI message with table: {len(result_data)} rows")
+                        
+                        # Extract text content without HTML tags for the main response
+                        content_text = block.get('content_text', content)
+                        if content_text:
+                            clean_content = re.sub('<[^<]+?>', '', content_text)
+                            story.append(Paragraph(clean_content, ai_style))
+                        
+                        story.append(Spacer(1, 10))
+                        story.append(Paragraph(f"<b>Data Table ({len(result_data)} rows):</b>", styles['Heading4']))
+                        
+                        # Create table for PDF
+                        headers = list(result_data[0].keys()) if result_data else []
+                        table_data = [headers]  # Header row
+                        
+                        print(f"[PDF DEBUG] Table headers: {headers}")
+                        
+                        # Add data rows (limit to first 15 rows for PDF space)
+                        for row_idx, row in enumerate(result_data[:15]):
+                            row_data = [str(row.get(col, '')) for col in headers]
+                            table_data.append(row_data)
+                            if row_idx < 3:  # Log first few rows
+                                print(f"[PDF DEBUG] Row {row_idx}: {row_data}")
+                        
+                        if len(table_data) > 1:  # If we have data beyond headers
+                            try:
+                                table = Table(table_data)
+                                table.setStyle(TableStyle([
+                                    ('BACKGROUND', (0, 0), (-1, 0), colors.black),
+                                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                                ]))
+                                story.append(table)
+                                story.append(Spacer(1, 15))
+                                print(f"[PDF DEBUG] Table added successfully")
+                                
+                                # Add note if data was truncated
+                                if len(result_data) > 15:
+                                    story.append(Paragraph(f"<i>Note: Table shows first 15 rows of {len(result_data)} total results.</i>", styles['Normal']))
+                                    story.append(Spacer(1, 10))
+                            except Exception as table_error:
+                                print(f"[PDF DEBUG] Error creating table in chat message: {table_error}")
+                                story.append(Paragraph(f"Table data: {len(result_data)} rows", styles['Normal']))
+                    else:
+                        # Regular AI message without table
+                        print(f"[PDF DEBUG] Regular AI message without table")
+                        clean_content = re.sub('<[^<]+?>', '', content) if content else ''
+                        story.append(Paragraph(clean_content, ai_style))
                 
                 story.append(Spacer(1, 15))
                 
             elif block_type == 'query':
                 user_input = block.get('user_input', '')
                 sql_query = block.get('sql_query', '')
+                result_data = block.get('result_data', [])
                 
                 story.append(Paragraph(f"<b>Query Request:</b>", user_style))
                 story.append(Paragraph(user_input, user_style))
@@ -1131,6 +1287,46 @@ def generate_comprehensive_pdf(blocks):
                 story.append(Paragraph(f"<b>Generated SQL:</b>", code_style))
                 story.append(Paragraph(f"<font name='Courier'>{sql_query}</font>", code_style))
                 story.append(Spacer(1, 15))
+                
+                # Add table data if available
+                if result_data and len(result_data) > 0:
+                    story.append(Paragraph(f"<b>Results ({len(result_data)} rows):</b>", styles['Heading4']))
+                    
+                    # Create table for PDF
+                    headers = list(result_data[0].keys()) if result_data else []
+                    table_data = [headers]  # Header row
+                    
+                    # Add data rows (limit to first 10 rows for PDF space)
+                    for i, row in enumerate(result_data[:10]):
+                        row_data = [str(row.get(col, '')) for col in headers]
+                        table_data.append(row_data)
+                    
+                    if len(table_data) > 1:  # If we have data beyond headers
+                        try:
+                            table = Table(table_data)
+                            table.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+                                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                            ]))
+                            story.append(table)
+                            story.append(Spacer(1, 20))
+                            
+                            # Add note if data was truncated
+                            if len(result_data) > 10:
+                                story.append(Paragraph(f"<i>Note: Table shows first 10 rows of {len(result_data)} total results.</i>", styles['Normal']))
+                                story.append(Spacer(1, 10))
+                        except Exception as table_error:
+                            print(f"Error creating table: {table_error}")
+                            story.append(Paragraph(f"Table data: {len(result_data)} rows returned", styles['Normal']))
+                            story.append(Spacer(1, 15))
                 
             elif block_type == 'visualization':
                 chart_title = block.get('chart_title', 'Chart')
@@ -1161,6 +1357,105 @@ def generate_comprehensive_pdf(blocks):
                 if explanation:
                     story.append(Spacer(1, 10))
                     story.append(Paragraph(explanation, styles['Normal']))
+                
+                story.append(Spacer(1, 20))
+                
+            elif block_type == 'dataset_schema':
+                dataset_name = block.get('dataset_name', 'Dataset')
+                shape = block.get('shape', (0, 0))
+                columns = block.get('columns', [])
+                data_health = block.get('data_health', {})
+                
+                story.append(Paragraph(f"<b>Dataset Schema: {dataset_name}</b>", styles['Heading3']))
+                story.append(Paragraph(f"Shape: {shape[0]} rows × {shape[1]} columns", styles['Normal']))
+                
+                # Data health summary
+                if data_health:
+                    health_text = f"Missing data: {data_health.get('missing_percentage', 0):.1f}% | "
+                    health_text += f"Duplicate rows: {data_health.get('duplicate_rows', 0)}"
+                    story.append(Paragraph(health_text, styles['Normal']))
+                
+                # Column information table
+                if columns:
+                    col_headers = ['Column', 'Type', 'Missing %', 'Unique Count']
+                    col_data = [col_headers]
+                    
+                    for col in columns[:10]:  # Limit to first 10 columns
+                        row = [
+                            col.get('name', ''),
+                            col.get('dtype', ''),
+                            f"{col.get('missing_percentage', 0):.1f}%",
+                            str(col.get('unique_count', ''))
+                        ]
+                        col_data.append(row)
+                    
+                    try:
+                        schema_table = Table(col_data)
+                        schema_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ]))
+                        story.append(schema_table)
+                    except Exception as e:
+                        story.append(Paragraph(f"Schema information: {len(columns)} columns", styles['Normal']))
+                
+                story.append(Spacer(1, 20))
+                
+            elif block_type == 'query_table':
+                table_title = block.get('title', 'Query Results')
+                table_data = block.get('data', [])
+                user_input = block.get('user_input', '')
+                sql_query = block.get('sql_query', '')
+                
+                story.append(Paragraph(f"<b>{table_title}</b>", styles['Heading3']))
+                
+                if user_input:
+                    story.append(Paragraph(f"<b>Query:</b> {user_input}", user_style))
+                if sql_query:
+                    story.append(Paragraph(f"<b>SQL:</b> <font name='Courier'>{sql_query}</font>", code_style))
+                    story.append(Spacer(1, 10))
+                
+                # Add table data
+                if table_data and len(table_data) > 0:
+                    headers = list(table_data[0].keys())
+                    table_rows = [headers]  # Header row
+                    
+                    # Add data rows (limit to first 10 rows for PDF space)
+                    for i, row in enumerate(table_data[:10]):
+                        row_data = [str(row.get(col, '')) for col in headers]
+                        table_rows.append(row_data)
+                    
+                    try:
+                        result_table = Table(table_rows)
+                        result_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F46E5')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ]))
+                        story.append(result_table)
+                        
+                        # Add note if data was truncated
+                        if len(table_data) > 10:
+                            story.append(Spacer(1, 10))
+                            story.append(Paragraph(f"<i>Note: Table shows first 10 rows of {len(table_data)} total results.</i>", styles['Normal']))
+                    except Exception as table_error:
+                        print(f"Error creating query table: {table_error}")
+                        story.append(Paragraph(f"Query returned {len(table_data)} rows", styles['Normal']))
                 
                 story.append(Spacer(1, 20))
                 
@@ -1254,12 +1549,21 @@ def generate_html_fallback(blocks):
     <head>
         <title>Data Analysis Report</title>
         <style>
-            body {{ font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }}
+            body {{ font-family: Arial, sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; }}
             .user-message {{ background: #e3f2fd; padding: 10px; margin: 10px 0; border-radius: 5px; }}
             .ai-message {{ background: #e8f5e8; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+            .query {{ background: #f5f5f5; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #4F46E5; }}
+            .schema {{ background: #fff3cd; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #ffc107; }}
+            .query_table {{ background: #d1ecf1; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #17a2b8; }}
             .chart {{ text-align: center; margin: 20px 0; }}
             .chart img {{ max-width: 100%; }}
+            table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #4F46E5; color: white; font-weight: bold; }}
+            tr:nth-child(even) {{ background-color: #f9f9f9; }}
+            code {{ background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-family: monospace; }}
             h1 {{ color: #333; text-align: center; }}
+            h3, h4 {{ color: #4F46E5; }}
         </style>
     </head>
     <body>
@@ -1275,6 +1579,117 @@ def generate_html_fallback(blocks):
             content = block.get('content', '')
             css_class = 'user-message' if sender.lower() == 'user' else 'ai-message'
             html_content += f'<div class="{css_class}"><strong>{sender}:</strong> {content}</div>'
+            
+        elif block_type == 'query':
+            user_input = block.get('user_input', '')
+            sql_query = block.get('sql_query', '')
+            result_data = block.get('result_data', [])
+            
+            html_content += f'<div class="query"><h3>Query Request</h3>'
+            html_content += f'<p><strong>Question:</strong> {user_input}</p>'
+            html_content += f'<p><strong>SQL:</strong> <code>{sql_query}</code></p>'
+            
+            # Add table if data exists
+            if result_data and len(result_data) > 0:
+                html_content += f'<h4>Results ({len(result_data)} rows):</h4>'
+                html_content += '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">'
+                
+                # Headers
+                headers = list(result_data[0].keys())
+                html_content += '<tr style="background-color: #4F46E5; color: white;">'
+                for header in headers:
+                    html_content += f'<th style="padding: 8px;">{header}</th>'
+                html_content += '</tr>'
+                
+                # Data rows (limit to first 10)
+                for row in result_data[:10]:
+                    html_content += '<tr>'
+                    for header in headers:
+                        html_content += f'<td style="padding: 8px;">{row.get(header, "")}</td>'
+                    html_content += '</tr>'
+                
+                html_content += '</table>'
+                
+                if len(result_data) > 10:
+                    html_content += f'<p><i>Note: Showing first 10 rows of {len(result_data)} total results.</i></p>'
+            
+            html_content += '</div>'
+            
+        elif block_type == 'dataset_schema':
+            dataset_name = block.get('dataset_name', 'Dataset')
+            shape = block.get('shape', (0, 0))
+            columns = block.get('columns', [])
+            data_health = block.get('data_health', {})
+            
+            html_content += f'<div class="schema"><h3>Dataset Schema: {dataset_name}</h3>'
+            html_content += f'<p><strong>Shape:</strong> {shape[0]} rows × {shape[1]} columns</p>'
+            
+            if data_health:
+                html_content += f'<p><strong>Data Health:</strong> '
+                html_content += f'Missing data: {data_health.get("missing_percentage", 0):.1f}% | '
+                html_content += f'Duplicate rows: {data_health.get("duplicate_rows", 0)}</p>'
+            
+            if columns:
+                html_content += '<h4>Column Information:</h4>'
+                html_content += '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">'
+                html_content += '<tr style="background-color: #4F46E5; color: white;">'
+                html_content += '<th style="padding: 8px;">Column</th>'
+                html_content += '<th style="padding: 8px;">Type</th>'
+                html_content += '<th style="padding: 8px;">Missing %</th>'
+                html_content += '<th style="padding: 8px;">Unique Count</th>'
+                html_content += '</tr>'
+                
+                for col in columns[:10]:  # Limit to first 10 columns
+                    html_content += '<tr>'
+                    html_content += f'<td style="padding: 8px;">{col.get("name", "")}</td>'
+                    html_content += f'<td style="padding: 8px;">{col.get("dtype", "")}</td>'
+                    html_content += f'<td style="padding: 8px;">{col.get("missing_percentage", 0):.1f}%</td>'
+                    html_content += f'<td style="padding: 8px;">{col.get("unique_count", "")}</td>'
+                    html_content += '</tr>'
+                
+                html_content += '</table>'
+                
+                if len(columns) > 10:
+                    html_content += f'<p><i>Note: Showing first 10 columns of {len(columns)} total columns.</i></p>'
+            
+            html_content += '</div>'
+            
+        elif block_type == 'query_table':
+            table_title = block.get('title', 'Query Results')
+            table_data = block.get('data', [])
+            user_input = block.get('user_input', '')
+            sql_query = block.get('sql_query', '')
+            
+            html_content += f'<div class="query_table"><h3>{table_title}</h3>'
+            
+            if user_input:
+                html_content += f'<p><strong>Query:</strong> {user_input}</p>'
+            if sql_query:
+                html_content += f'<p><strong>SQL:</strong> <code>{sql_query}</code></p>'
+            
+            if table_data and len(table_data) > 0:
+                html_content += '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;">'
+                
+                # Headers
+                headers = list(table_data[0].keys())
+                html_content += '<tr style="background-color: #4F46E5; color: white;">'
+                for header in headers:
+                    html_content += f'<th style="padding: 8px;">{header}</th>'
+                html_content += '</tr>'
+                
+                # Data rows (limit to first 10)
+                for row in table_data[:10]:
+                    html_content += '<tr>'
+                    for header in headers:
+                        html_content += f'<td style="padding: 8px;">{row.get(header, "")}</td>'
+                    html_content += '</tr>'
+                
+                html_content += '</table>'
+                
+                if len(table_data) > 10:
+                    html_content += f'<p><i>Note: Showing first 10 rows of {len(table_data)} total results.</i></p>'
+            
+            html_content += '</div>'
             
         elif block_type == 'visualization':
             chart_title = block.get('chart_title', 'Chart')
@@ -1552,12 +1967,47 @@ def generate_comprehensive_pptx(blocks):
             if block_type == 'chat_message':
                 sender = block.get('sender', 'User')
                 content = block.get('content', '')
+                has_table = block.get('has_table', False)
+                result_data = block.get('result_data', [])
+                
                 slide_content.append(f"{sender}: {content}")
+                
+                # If chat message has table data, add it
+                if has_table and result_data:
+                    slide_content.append(f"Data Table ({len(result_data)} rows):")
+                    # Add first few rows as sample
+                    if result_data:
+                        headers = list(result_data[0].keys())
+                        slide_content.append(f"Columns: {', '.join(headers)}")
+                        for i, row in enumerate(result_data[:3]):  # Show first 3 rows
+                            row_text = ', '.join([f"{k}: {v}" for k, v in row.items()])
+                            slide_content.append(f"Row {i+1}: {row_text}")
+                        if len(result_data) > 3:
+                            slide_content.append(f"... and {len(result_data) - 3} more rows")
+                            
             elif block_type == 'query':
                 user_input = block.get('user_input', '')
                 sql_query = block.get('sql_query', '')
+                result_data = block.get('result_data', [])
+                has_table = block.get('has_table', False)
+                
                 slide_content.append(f"Query: {user_input}")
                 slide_content.append(f"SQL: {sql_query}")
+                
+                if has_table and result_data:
+                    slide_content.append(f"Results: {len(result_data)} rows")
+                    # Add sample data
+                    if result_data:
+                        headers = list(result_data[0].keys())
+                        slide_content.append(f"Columns: {', '.join(headers)}")
+                        for i, row in enumerate(result_data[:3]):  # Show first 3 rows
+                            row_text = ', '.join([f"{k}: {v}" for k, v in row.items()])
+                            slide_content.append(f"Row {i+1}: {row_text}")
+                        if len(result_data) > 3:
+                            slide_content.append(f"... and {len(result_data) - 3} more rows")
+                elif result_data:
+                    slide_content.append(f"Results: {len(result_data)} rows returned")
+                    
             elif block_type == 'text':
                 content = block.get('content', '')
                 slide_content.append(content)
@@ -1611,6 +2061,100 @@ def get_available_charts(request):
         return JsonResponse({'status': 'error', 'message': str(e)})
 
 
+def get_chat_history(request):
+    """Get chat history from session for report builder"""
+    try:
+        # Debug session contents
+        print(f"DEBUG - All session keys: {list(request.session.keys())}")
+        
+        # Get chat history from session
+        chat_history = request.session.get('chat_history', [])
+        
+        print(f"DEBUG - Chat history length: {len(chat_history)}")
+        if chat_history:
+            print(f"DEBUG - First chat item: {chat_history[0]}")
+        
+        # Format chat history for report builder
+        formatted_history = []
+        for chat in chat_history:
+            # Handle different chat types
+            if chat.get('type') == 'chat_message':
+                formatted_history.append({
+                    'sender': chat.get('sender', 'User'),
+                    'content': chat.get('content', ''),
+                    'timestamp': chat.get('timestamp', '')
+                })
+            elif chat.get('type') == 'query':
+                # Add user query as a chat message
+                formatted_history.append({
+                    'sender': 'User',
+                    'content': chat.get('user_input', ''),
+                    'timestamp': chat.get('timestamp', '')
+                })
+                
+                # Create comprehensive AI response with SQL and results
+                sql_query = chat.get('sql_query', '')
+                result_data = chat.get('result_data', [])
+                
+                # Build response content with SQL and table
+                response_content = f"<strong>Generated SQL Query:</strong><br><pre><code>{sql_query}</code></pre>"
+                
+                # Add results table if we have data
+                if result_data and len(result_data) > 0:
+                    response_content += "<br><strong>Query Results:</strong><br>"
+                    response_content += "<table style='border-collapse: collapse; width: 100%; margin-top: 10px;'>"
+                    
+                    # Table header
+                    headers = list(result_data[0].keys())
+                    response_content += "<tr style='background-color: #f0f0f0;'>"
+                    for header in headers:
+                        response_content += f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>{header}</th>"
+                    response_content += "</tr>"
+                    
+                    # Table rows (limit to first 20 for display)
+                    for i, row in enumerate(result_data[:20]):
+                        response_content += "<tr>"
+                        for header in headers:
+                            value = row.get(header, '')
+                            response_content += f"<td style='border: 1px solid #ddd; padding: 8px;'>{value}</td>"
+                        response_content += "</tr>"
+                    
+                    response_content += "</table>"
+                    
+                    # Add note if there are more rows
+                    if len(result_data) > 20:
+                        response_content += f"<br><em>Showing first 20 of {len(result_data)} total rows</em>"
+                
+                # Add AI response about the query
+                formatted_history.append({
+                    'sender': 'AI Assistant',
+                    'content': response_content,
+                    'timestamp': chat.get('timestamp', '')
+                })
+        
+        print(f"DEBUG - Formatted history length: {len(formatted_history)}")
+        
+        return JsonResponse({
+            'success': True,
+            'chat_history': formatted_history,
+            'debug_info': {
+                'session_keys': list(request.session.keys()),
+                'raw_chat_history_length': len(chat_history),
+                'formatted_history_length': len(formatted_history)
+            }
+        })
+        
+    except Exception as e:
+        print(f"ERROR - get_chat_history failed: {str(e)}")
+        import traceback
+        print(f"ERROR - Traceback: {traceback.format_exc()}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'chat_history': []
+        })
+
+
 def generate_report_image(blocks, format_type):
     """Generate report as image using HTML to image conversion"""
     # This is a simplified version - you might want to use libraries like wkhtmltopdf or playwright
@@ -1653,6 +2197,7 @@ def save_chat_message(request, sender, content):
         'timestamp': datetime.utcnow().isoformat()
     })
     request.session['chat_history'] = chat_history
+    request.session.modified = True  # Ensure session is saved
 
 def save_visualization(request, chart_title, image_url, explanation):
     """Save a visualization block to session."""
@@ -1665,6 +2210,7 @@ def save_visualization(request, chart_title, image_url, explanation):
         'timestamp': datetime.utcnow().isoformat()
     })
     request.session['visualizations'] = visualizations
+    request.session.modified = True  # Ensure session is saved
 
 def save_query_result(request, user_input, sql_query, result_data, visualization_suggestion):
     """Save a query history block to session."""
@@ -1673,6 +2219,7 @@ def save_query_result(request, user_input, sql_query, result_data, visualization
         'type': 'query',
         'user_input': user_input,
         'sql_query': sql_query,
+        'result_data': result_data,  # Save full result data for table generation
         'result_summary': {
             'rows': len(result_data),
             'columns': list(result_data[0].keys()) if result_data else [],
@@ -1681,6 +2228,52 @@ def save_query_result(request, user_input, sql_query, result_data, visualization
         'timestamp': datetime.utcnow().isoformat()
     })
     request.session['chat_history'] = chat_history
+    request.session.modified = True  # Ensure session is saved
+
+def save_dataset_schema(request, dataset_name, data_profile):
+    """Save dataset schema information to session for reports."""
+    if 'dataset_schemas' not in request.session:
+        request.session['dataset_schemas'] = []
+    
+    schema_info = {
+        'type': 'dataset_schema',
+        'dataset_name': dataset_name,
+        'shape': data_profile['shape'],
+        'columns': data_profile['columns'][:10],  # Limit to first 10 columns for space
+        'data_health': data_profile['data_health'],
+        'total_columns': len(data_profile['columns']),
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    # Only keep the latest schema (replace if exists)
+    schemas = request.session.get('dataset_schemas', [])
+    # Remove any existing schema for this dataset
+    schemas = [s for s in schemas if s.get('dataset_name') != dataset_name]
+    schemas.append(schema_info)
+    
+    request.session['dataset_schemas'] = schemas
+    request.session.modified = True
+
+def save_query_table(request, query_description, result_data, user_input="", sql_query=""):
+    """Save query result table for report inclusion."""
+    if 'query_tables' not in request.session:
+        request.session['query_tables'] = []
+    
+    table_info = {
+        'type': 'query_table',
+        'title': query_description,
+        'user_input': user_input,
+        'sql_query': sql_query,
+        'data': result_data,
+        'row_count': len(result_data),
+        'columns': list(result_data[0].keys()) if result_data else [],
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    tables = request.session.get('query_tables', [])
+    tables.append(table_info)
+    request.session['query_tables'] = tables
+    request.session.modified = True
 
 
 
@@ -1690,6 +2283,15 @@ def report_builder(request):
     chat_history = request.session.get("chat_history", [])
     visualizations = request.session.get("visualizations", [])
     tables = request.session.get("tables", [])
+    dataset_schemas = request.session.get("dataset_schemas", [])
+    query_tables = request.session.get("query_tables", [])
+    
+    # Debug logging
+    print(f"DEBUG Report Builder - Chat history: {len(chat_history)} items")
+    print(f"DEBUG Report Builder - Visualizations: {len(visualizations)} items") 
+    print(f"DEBUG Report Builder - Tables: {len(tables)} items")
+    print(f"DEBUG Report Builder - Dataset schemas: {len(dataset_schemas)} items")
+    print(f"DEBUG Report Builder - Query tables: {len(query_tables)} items")
     
     # Check if user has custom report blocks, otherwise build from session data
     report_blocks = request.session.get('report_blocks', [])
@@ -1700,6 +2302,14 @@ def report_builder(request):
         
         # Combine and sort all blocks by timestamp if available
         all_items = []
+        
+        # Add dataset schemas first
+        for item in dataset_schemas:
+            if 'timestamp' in item:
+                all_items.append(item)
+            else:
+                item['timestamp'] = datetime.utcnow().isoformat()
+                all_items.append(item)
         
         # Add chat messages
         for item in chat_history:
@@ -1717,7 +2327,15 @@ def report_builder(request):
                 item['timestamp'] = datetime.utcnow().isoformat()
                 all_items.append(item)
         
-        # Add tables
+        # Add query tables
+        for item in query_tables:
+            if 'timestamp' in item:
+                all_items.append(item)
+            else:
+                item['timestamp'] = datetime.utcnow().isoformat()
+                all_items.append(item)
+        
+        # Add other tables
         for item in tables:
             if 'timestamp' in item:
                 all_items.append(item)
@@ -1733,6 +2351,7 @@ def report_builder(request):
         
         # Save to session
         request.session['report_blocks'] = all_items
+        request.session.modified = True  # Ensure session is saved
         blocks = all_items
     else:
         blocks = report_blocks
@@ -2065,3 +2684,945 @@ def generate_plotly_config(df, chart_type, x_axis, y_axis):
     
     # Convert the figure to a JSON serializable object
     return json.loads(fig.to_json())
+
+def session_cleanup_endpoint(request):
+    """Endpoint to handle complete session cleanup including Supabase data"""
+    if request.method == 'POST':
+        try:
+            # Perform complete cleanup
+            success = complete_session_cleanup(request.session)
+            
+            if success:
+                return JsonResponse({
+                    'status': 'success',
+                    'message': 'Session cleaned up successfully, all data removed from Supabase'
+                })
+            else:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Failed to complete session cleanup'
+                })
+                
+        except Exception as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Error during cleanup: {str(e)}'
+            })
+    
+    return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
+def session_end_cleanup(request):
+    """Handle cleanup when session ends (browser close, timeout, etc.)"""
+    try:
+        # This will be called by JavaScript when the page is about to unload
+        complete_session_cleanup(request.session)
+        return JsonResponse({'status': 'success'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+def advanced_visualization_builder(request, dataset_name=None):
+    """Advanced visualization builder with adaptive interface"""
+    try:
+        # Debug session info
+        print(f"DEBUG: Session keys: {list(request.session.keys())}")
+        print(f"DEBUG: Session dataset_path: {request.session.get('dataset_path')}")
+        print(f"DEBUG: Session dataset_display_name: {request.session.get('dataset_display_name')}")
+        print(f"DEBUG: Session ID: {request.session.session_key}")
+        
+        # Get dataset information
+        dataset_path = request.session.get("dataset_path")
+        if not dataset_path:
+            print("DEBUG: No dataset_path found in session")
+            # Try to refresh session data
+            request.session.cycle_key()
+            dataset_path = request.session.get("dataset_path")
+            if not dataset_path:
+                messages.error(request, "No dataset found. Please upload a dataset first.")
+                return redirect("index")
+        
+        # Load dataset from Supabase
+        try:
+            print(f"DEBUG: Loading dataset from: {dataset_path}")
+            res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_path)
+            df = pd.read_csv(io.BytesIO(res))
+            print(f"DEBUG: Dataset loaded successfully, shape: {df.shape}")
+        except Exception as e:
+            print(f"DEBUG: Error loading dataset: {e}")
+            
+            # Try to list what files are actually available
+            try:
+                files = supabase.storage.from_(SUPABASE_BUCKET).list("sessions/")
+                print(f"DEBUG: Available files: {[f.get('name', 'unknown') for f in files[:10]]}")
+            except Exception as list_error:
+                print(f"DEBUG: Cannot list files: {list_error}")
+            
+            messages.error(request, "Failed to load dataset. The file may have expired. Please upload the dataset again.")
+            return redirect("index")
+        
+        # Get column information
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        datetime_columns = df.select_dtypes(include=['datetime64']).columns.tolist()
+        all_columns = df.columns.tolist()
+        
+        # Get sample data for preview
+        sample_data = df.head(10).to_dict('records')
+        
+        context = {
+            'dataset_name': request.session.get("dataset_display_name", "Dataset"),
+            'dataset_internal_name': request.session.get("dataset_path", "").split('/')[-1] if request.session.get("dataset_path") else "",
+            'columns': all_columns,
+            'numeric_columns': numeric_columns,
+            'categorical_columns': categorical_columns,
+            'datetime_columns': datetime_columns,
+            'sample_data': sample_data,
+            'row_count': len(df),
+            'column_count': len(df.columns)
+        }
+        
+        return render(request, 'advanced_visualization_builder_new.html', context)
+        
+    except Exception as e:
+        print(f"Error in advanced_visualization_builder: {e}")
+        messages.error(request, f"Error loading visualization builder: {str(e)}")
+        return redirect("index")
+
+def generate_advanced_chart(request):
+    """Generate charts using Matplotlib and Seaborn based on user selections"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid request method'})
+    
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        from matplotlib.colors import ListedColormap
+        import warnings
+        warnings.filterwarnings('ignore')
+        
+        # Get request data
+        data = json.loads(request.body)
+        chart_type = data.get('chart_type')
+        chart_config = data.get('config', {})
+        
+        # Debug logging
+        print(f"Chart type: {chart_type}")
+        print(f"Chart config: {chart_config}")
+        
+        # Load dataset
+        dataset_path = request.session.get("dataset_path")
+        print(f"DEBUG: Session keys: {list(request.session.keys())}")
+        print(f"DEBUG: Dataset path from session: {dataset_path}")
+        print(f"DEBUG: Session ID: {request.session.session_key}")
+        
+        if not dataset_path:
+            print("DEBUG: No dataset_path found in session")
+            return JsonResponse({'error': 'No dataset found in session. Please upload a dataset first.'})
+        
+        try:
+            print(f"DEBUG: Attempting to download from Supabase: {dataset_path}")
+            print(f"DEBUG: Bucket: {SUPABASE_BUCKET}")
+            res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_path)
+            df = pd.read_csv(io.BytesIO(res))
+            print(f"DEBUG: Successfully loaded dataset with shape: {df.shape}")
+            print(f"DEBUG: Columns: {df.columns.tolist()}")
+        except Exception as e:
+            print(f"DEBUG: Error loading dataset from Supabase: {e}")
+            print(f"DEBUG: Dataset path: {dataset_path}")
+            print(f"DEBUG: Error type: {type(e)}")
+            
+            # Try to list files in the bucket to see what's available
+            try:
+                files = supabase.storage.from_(SUPABASE_BUCKET).list("sessions/")
+                print(f"DEBUG: Available files in bucket: {[f.get('name') for f in files[:5]]}")
+            except Exception as list_error:
+                print(f"DEBUG: Could not list files: {list_error}")
+                
+            return JsonResponse({'error': f'Failed to load dataset: {str(e)}. Please try uploading the dataset again.'})
+        
+        # Validate dataset
+        if df.empty:
+            return JsonResponse({'error': 'Dataset is empty'})
+        
+        # Set style and color palette
+        plt.style.use('dark_background')
+        selected_palette = chart_config.get('palette', 'husl')
+        sns.set_palette(selected_palette)
+        
+        # Process configuration for specific chart types
+        if chart_type == 'pie':
+            # Map new template fields to expected pie chart config fields
+            chart_config['simple_column'] = chart_config.get('category_column')
+            chart_config['chart_subtype'] = 'simple'  # Default to simple pie chart
+            if chart_config.get('value_column'):
+                chart_config['value_column'] = chart_config.get('value_column')
+        
+        # Create figure
+        plt.figure(figsize=(12, 8))
+        
+        # Generate chart based on type
+        if chart_type == 'bar':
+            chart_html = generate_bar_chart(df, chart_config)
+        elif chart_type == 'line':
+            chart_html = generate_line_chart(df, chart_config)
+        elif chart_type == 'scatter':
+            chart_html = generate_scatter_chart(df, chart_config)
+        elif chart_type == 'histogram':
+            chart_html = generate_histogram_chart(df, chart_config)
+        elif chart_type == 'box':
+            chart_html = generate_box_chart(df, chart_config)
+        elif chart_type == 'pie':
+            chart_html = generate_pie_chart(df, chart_config)
+        elif chart_type == 'heatmap':
+            chart_html = generate_heatmap_chart(df, chart_config)
+        elif chart_type == 'violin':
+            chart_html = generate_violin_chart(df, chart_config)
+        elif chart_type == 'area':
+            chart_html = generate_area_chart(df, chart_config)
+        elif chart_type == 'density':
+            chart_html = generate_density_chart(df, chart_config)
+        else:
+            return JsonResponse({'error': f'Unsupported chart type: {chart_type}'})
+        
+        # Clear the plot
+        plt.close('all')
+        
+        # Store in session for report builder
+        if 'visualizations' not in request.session:
+            request.session['visualizations'] = []
+        
+        # Extract base64 image from HTML for report compatibility
+        image_url = ""
+        if 'data:image/png;base64,' in chart_html:
+            # Extract the data URL from the img tag
+            import re
+            match = re.search(r'src="(data:image/png;base64,[^"]+)"', chart_html)
+            if match:
+                image_url = match.group(1)
+        
+        chart_info = {
+            'type': 'visualization',  # Match the type used by auto-generated charts
+            'chart_title': f"{chart_type.title()} Chart: {chart_config.get('title', '')}",
+            'image_url': image_url,  # Use image_url for PDF compatibility
+            'html': chart_html,  # Keep HTML for web display
+            'explanation': f"Advanced {chart_type} chart generated with custom configuration",
+            'chart_type': chart_type,
+            'config': chart_config,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        request.session['visualizations'].append(chart_info)
+        request.session.modified = True
+        
+        return JsonResponse({
+            'success': True,
+            'chart_html': chart_html,
+            'chart_info': chart_info
+        })
+        
+    except Exception as e:
+        plt.close('all')  # Cleanup on error
+        return JsonResponse({'error': f'Error generating chart: {str(e)}'})
+
+def generate_bar_chart(df, config):
+    """Generate bar chart with Matplotlib/Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        x_col = config.get('x_column')
+        y_cols = config.get('y_columns', [])
+        title = config.get('title', 'Bar Chart')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        stacked = config.get('stacked', False)
+        horizontal = config.get('horizontal', False)
+        
+        if not x_col or not y_cols:
+            raise ValueError("X column and Y columns are required")
+        
+        # Handle categorical data
+        if df[x_col].dtype == 'object':
+            # Group by categorical column and aggregate
+            if len(y_cols) == 1:
+                grouped_df = df.groupby(x_col)[y_cols[0]].sum().reset_index()
+                x_data = grouped_df[x_col]
+                y_data = grouped_df[y_cols[0]]
+                
+                if horizontal:
+                    plt.barh(x_data, y_data, color=sns.color_palette(color_palette, 1)[0])
+                    plt.xlabel(y_cols[0])
+                    plt.ylabel(x_col)
+                else:
+                    plt.bar(x_data, y_data, color=sns.color_palette(color_palette, 1)[0])
+                    plt.xlabel(x_col)
+                    plt.ylabel(y_cols[0])
+            else:
+                # Multiple y columns
+                grouped_df = df.groupby(x_col)[y_cols].sum()
+                
+                if stacked:
+                    grouped_df.plot(kind='barh' if horizontal else 'bar', 
+                                  stacked=True, 
+                                  color=sns.color_palette(color_palette, len(y_cols)),
+                                  ax=plt.gca())
+                else:
+                    grouped_df.plot(kind='barh' if horizontal else 'bar', 
+                                  color=sns.color_palette(color_palette, len(y_cols)),
+                                  ax=plt.gca())
+        else:
+            # Numeric x column
+            for i, y_col in enumerate(y_cols):
+                color = sns.color_palette(color_palette, len(y_cols))[i]
+                if horizontal:
+                    plt.barh(df[x_col], df[y_col], alpha=0.7, label=y_col, color=color)
+                else:
+                    plt.bar(df[x_col], df[y_col], alpha=0.7, label=y_col, color=color)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xticks(rotation=45)
+        plt.legend()
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating bar chart: {str(e)}")
+
+def generate_line_chart(df, config):
+    """Generate line chart with Matplotlib/Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        x_col = config.get('x_column')
+        y_cols = config.get('y_columns', [])
+        title = config.get('title', 'Line Chart')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        markers = config.get('markers', True)
+        line_style = config.get('line_style', '-')
+        
+        if not x_col or not y_cols:
+            raise ValueError("X column and Y columns are required")
+        
+        colors = sns.color_palette(color_palette, len(y_cols))
+        
+        for i, y_col in enumerate(y_cols):
+            if markers:
+                plt.plot(df[x_col], df[y_col], marker='o', 
+                        linestyle=line_style, color=colors[i], 
+                        label=y_col, linewidth=2, markersize=4)
+            else:
+                plt.plot(df[x_col], df[y_col], 
+                        linestyle=line_style, color=colors[i], 
+                        label=y_col, linewidth=2)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xlabel(x_col)
+        plt.ylabel(' / '.join(y_cols))
+        plt.legend()
+        plt.xticks(rotation=45)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating line chart: {str(e)}")
+
+def generate_scatter_chart(df, config):
+    """Generate scatter plot with Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        x_col = config.get('x_column')
+        y_col = config.get('y_column')
+        hue_col = config.get('hue_column')
+        size_col = config.get('size_column')
+        style_col = config.get('style_column')
+        title = config.get('title', 'Scatter Plot')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        
+        if not x_col or not y_col:
+            raise ValueError("X and Y columns are required")
+        
+        # Create scatter plot
+        sns.scatterplot(data=df, x=x_col, y=y_col, 
+                       hue=hue_col, size=size_col, style=style_col,
+                       palette=color_palette, alpha=0.7, s=60)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xlabel(x_col)
+        plt.ylabel(y_col)
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating scatter chart: {str(e)}")
+
+def generate_histogram_chart(df, config):
+    """Generate histogram with Matplotlib/Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        columns = config.get('columns', [])
+        title = config.get('title', 'Histogram')
+        bins = config.get('bins', 30)
+        density = config.get('density', False)
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        
+        if not columns:
+            raise ValueError("At least one column is required")
+        
+        colors = sns.color_palette(color_palette, len(columns))
+        
+        for i, col in enumerate(columns):
+            plt.hist(df[col].dropna(), bins=bins, alpha=0.7, 
+                    label=col, color=colors[i], density=density)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xlabel('Value')
+        plt.ylabel('Density' if density else 'Frequency')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating histogram: {str(e)}")
+
+def generate_box_chart(df, config):
+    """Generate box plot with Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        y_cols = config.get('y_columns', [])
+        x_col = config.get('x_column')  # Optional grouping column
+        title = config.get('title', 'Box Plot')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        
+        if not y_cols:
+            raise ValueError("At least one Y column is required")
+        
+        if x_col:
+            # Grouped box plot
+            for y_col in y_cols:
+                sns.boxplot(data=df, x=x_col, y=y_col, palette=color_palette)
+                plt.xticks(rotation=45)
+        else:
+            # Simple box plot
+            data_to_plot = [df[col].dropna() for col in y_cols]
+            plt.boxplot(data_to_plot, labels=y_cols, patch_artist=True,
+                       boxprops=dict(facecolor=sns.color_palette(color_palette, 1)[0]))
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating box plot: {str(e)}")
+
+def generate_pie_chart(df, config):
+    """Generate advanced pie chart with complex grouping and filtering capabilities"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        chart_subtype = config.get('chart_subtype', 'simple')
+        title = config.get('title', 'Pie Chart')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        max_slices = config.get('max_slices', 8)
+        
+        # Debug logging
+        print(f"Pie chart subtype: {chart_subtype}")
+        print(f"Config: {config}")
+        print(f"Available columns: {df.columns.tolist()}")
+        
+        # Create figure with proper size
+        plt.figure(figsize=(12, 8))
+        
+        if chart_subtype == 'simple':
+            # Simple distribution - count occurrences in a single column
+            simple_column = config.get('simple_column') or config.get('category_column')
+            if not simple_column or simple_column not in df.columns:
+                raise ValueError(f"Category column '{simple_column}' is required and must exist in dataset")
+            
+            # Check if there's a value column to sum by
+            value_column = config.get('value_column')
+            if value_column and value_column in df.columns:
+                # Sum values by category
+                grouped_data = df.groupby(simple_column)[value_column].sum().sort_values(ascending=False)
+                value_counts = grouped_data.head(max_slices)
+                labels = value_counts.index.tolist()
+                values = value_counts.values
+                
+                if not title or title == 'Pie Chart':
+                    title = f"Sum of {value_column} by {simple_column}"
+            else:
+                # Count occurrences by category
+                value_counts = df[simple_column].value_counts().head(max_slices)
+                labels = value_counts.index.tolist()
+                values = value_counts.values
+                
+                if not title or title == 'Pie Chart':
+                    title = f"Distribution of {simple_column}"
+                
+        elif chart_subtype == 'grouped':
+            # Grouped distribution - e.g., Gender distribution by Department
+            group_by_column = config.get('group_by_column')
+            category_column = config.get('category_column')
+            specific_group = config.get('specific_group')
+            aggregation_method = config.get('aggregation_method', 'count')
+            
+            if not group_by_column or group_by_column not in df.columns:
+                raise ValueError("Group by column is required and must exist in dataset")
+            if not category_column or category_column not in df.columns:
+                raise ValueError("Category column is required and must exist in dataset")
+            
+            # Filter to specific group if requested
+            if specific_group:
+                filtered_df = df[df[group_by_column] == specific_group]
+                if len(filtered_df) == 0:
+                    raise ValueError(f"No data found for group '{specific_group}'")
+                
+                # Count categories within the specific group
+                value_counts = filtered_df[category_column].value_counts()
+                labels = value_counts.index.tolist()
+                values = value_counts.values
+                
+                if not title:
+                    title = f"{category_column} Distribution in {specific_group}"
+            else:
+                # Show distribution across all groups
+                if aggregation_method == 'count':
+                    # Total count across all groups
+                    value_counts = df[category_column].value_counts().head(max_slices)
+                    labels = value_counts.index.tolist()
+                    values = value_counts.values
+                    
+                    if not title:
+                        title = f"Overall {category_column} Distribution"
+                else:
+                    # Percentage within each group (complex calculation)
+                    cross_tab = pd.crosstab(df[group_by_column], df[category_column])
+                    percentage_df = cross_tab.div(cross_tab.sum(axis=1), axis=0) * 100
+                    
+                    # Flatten and get top combinations
+                    flattened = []
+                    for group in percentage_df.index:
+                        for category in percentage_df.columns:
+                            if not pd.isna(percentage_df.loc[group, category]):
+                                flattened.append({
+                                    'label': f"{category} ({group})",
+                                    'value': percentage_df.loc[group, category]
+                                })
+                    
+                    # Sort and take top entries
+                    flattened.sort(key=lambda x: x['value'], reverse=True)
+                    flattened = flattened[:max_slices]
+                    
+                    labels = [item['label'] for item in flattened]
+                    values = np.array([item['value'] for item in flattened])
+                    
+                    if not title:
+                        title = f"{category_column} Percentage by {group_by_column}"
+                        
+        elif chart_subtype == 'values':
+            # Value-based pie chart - use numeric values
+            values_column = config.get('values_column')
+            labels_column = config.get('labels_column')
+            
+            if not values_column or values_column not in df.columns:
+                raise ValueError("Values column is required and must exist in dataset")
+            
+            if labels_column and labels_column in df.columns:
+                # Group by labels and sum values
+                grouped_df = df.groupby(labels_column)[values_column].sum().sort_values(ascending=False)
+                grouped_df = grouped_df.head(max_slices)
+                labels = grouped_df.index.tolist()
+                values = grouped_df.values
+            else:
+                # Use top values with generic labels
+                top_values = df[values_column].dropna().nlargest(max_slices)
+                values = top_values.values
+                labels = [f"Item {i+1}" for i in range(len(values))]
+                
+            if not title:
+                title = f"Distribution by {values_column}"
+        else:
+            raise ValueError(f"Unknown pie chart subtype: {chart_subtype}")
+        
+        # Ensure we have valid data
+        if len(values) == 0:
+            raise ValueError("No data available for pie chart")
+        
+        # Filter out zero or negative values for percentage-based charts
+        if chart_subtype != 'grouped' or config.get('aggregation_method') != 'percentage':
+            valid_mask = values > 0
+            values = values[valid_mask]
+            labels = [labels[i] for i in range(len(labels)) if valid_mask[i]]
+        
+        if len(values) == 0:
+            raise ValueError("No positive values found for pie chart")
+        
+        # Add "Others" category if we have more data than max_slices
+        if chart_subtype == 'simple':
+            total_unique = df[config.get('simple_column')].nunique()
+            if total_unique > max_slices:
+                others_count = df[config.get('simple_column')].value_counts().iloc[max_slices:].sum()
+                if others_count > 0:
+                    labels.append('Others')
+                    values = np.append(values, others_count)
+        
+        # Generate colors
+        colors = sns.color_palette(color_palette, len(values))
+        
+        # Create pie chart
+        wedges, texts, autotexts = plt.pie(values, labels=labels, autopct='%1.1f%%', 
+                                          startangle=90, colors=colors, 
+                                          textprops={'fontsize': 10, 'color': 'white'})
+        
+        # Improve text visibility
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+            autotext.set_fontsize(9)
+        
+        for text in texts:
+            text.set_color('white')
+            text.set_fontsize(10)
+        
+        plt.title(title, fontsize=16, fontweight='bold', color='white', pad=20)
+        plt.axis('equal')
+        
+        # Add legend if many slices
+        if len(labels) > 6:
+            plt.legend(wedges, labels, title="Categories", loc="center left", 
+                      bbox_to_anchor=(1, 0, 0.5, 1), fontsize=10)
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        plt.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        print(f"Error in generate_pie_chart: {str(e)}")
+        raise Exception(f"Error generating pie chart: {str(e)}")
+
+def generate_heatmap_chart(df, config):
+    """Generate heatmap with Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import base64
+        from io import BytesIO
+        
+        columns = config.get('columns', [])
+        title = config.get('title', 'Heatmap')
+        color_palette = config.get('palette') or config.get('color_palette', 'viridis')
+        show_values = config.get('show_values', True)
+        
+        if not columns:
+            # Use all numeric columns
+            numeric_df = df.select_dtypes(include=[np.number])
+        else:
+            numeric_df = df[columns]
+        
+        # Calculate correlation matrix
+        corr_matrix = numeric_df.corr()
+        
+        # Create heatmap
+        sns.heatmap(corr_matrix, annot=show_values, cmap=color_palette, 
+                   center=0, square=True, fmt='.2f')
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating heatmap: {str(e)}")
+
+def generate_violin_chart(df, config):
+    """Generate violin plot with Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        y_cols = config.get('y_columns', [])
+        x_col = config.get('x_column')
+        title = config.get('title', 'Violin Plot')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        
+        if not y_cols:
+            raise ValueError("At least one Y column is required")
+        
+        if x_col:
+            # Grouped violin plot
+            for y_col in y_cols:
+                sns.violinplot(data=df, x=x_col, y=y_col, palette=color_palette)
+                plt.xticks(rotation=45)
+        else:
+            # Simple violin plot
+            data_to_plot = [df[col].dropna() for col in y_cols]
+            sns.violinplot(data=data_to_plot, palette=color_palette)
+            plt.xticks(range(len(y_cols)), y_cols)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating violin plot: {str(e)}")
+
+def generate_area_chart(df, config):
+    """Generate area chart with Matplotlib"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        x_col = config.get('x_column')
+        y_cols = config.get('y_columns', [])
+        title = config.get('title', 'Area Chart')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        stacked = config.get('stacked', True)
+        
+        if not x_col or not y_cols:
+            raise ValueError("X column and Y columns are required")
+        
+        colors = sns.color_palette(color_palette, len(y_cols))
+        
+        if stacked:
+            plt.stackplot(df[x_col], *[df[col] for col in y_cols], 
+                         labels=y_cols, colors=colors, alpha=0.7)
+        else:
+            for i, y_col in enumerate(y_cols):
+                plt.fill_between(df[x_col], df[y_col], alpha=0.7, 
+                               color=colors[i], label=y_col)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xlabel(x_col)
+        plt.ylabel(' / '.join(y_cols))
+        plt.legend()
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating area chart: {str(e)}")
+
+def generate_density_chart(df, config):
+    """Generate density plot with Seaborn"""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        import pandas as pd
+        import base64
+        from io import BytesIO
+        
+        columns = config.get('columns', [])
+        title = config.get('title', 'Density Plot')
+        color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        
+        if not columns:
+            raise ValueError("At least one column is required")
+        
+        colors = sns.color_palette(color_palette, len(columns))
+        
+        for i, col in enumerate(columns):
+            sns.kdeplot(data=df, x=col, color=colors[i], label=col, fill=True, alpha=0.6)
+        
+        plt.title(title, fontsize=16, fontweight='bold')
+        plt.xlabel('Value')
+        plt.ylabel('Density')
+        plt.legend()
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', 
+                   facecolor='#1a1a1a', edgecolor='none', dpi=100)
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        buffer.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" style="max-width: 100%; height: auto;">'
+        
+    except Exception as e:
+        raise Exception(f"Error generating density plot: {str(e)}")
+
+
+def get_column_values(request):
+    """Get unique values for a specific column"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid request method'})
+    
+    try:
+        data = json.loads(request.body)
+        column_name = data.get('column')
+        
+        if not column_name:
+            return JsonResponse({'error': 'Column name is required'})
+        
+        # Load dataset
+        dataset_path = request.session.get("dataset_path")
+        if not dataset_path:
+            return JsonResponse({'error': 'No dataset found'})
+        
+        try:
+            res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_path)
+            df = pd.read_csv(io.BytesIO(res))
+        except Exception as e:
+            return JsonResponse({'error': 'Failed to load dataset'})
+        
+        if column_name not in df.columns:
+            return JsonResponse({'error': f'Column {column_name} not found'})
+        
+        # Get unique values (limit to 50 for performance)
+        unique_values = df[column_name].dropna().unique()[:50]
+        unique_values = [str(val) for val in unique_values]
+        
+        return JsonResponse({'values': unique_values})
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
+def debug_session(request):
+    """Debug session data"""
+    context = {
+        'session_keys': list(request.session.keys()),
+        'dataset_path': request.session.get('dataset_path'),
+        'dataset_display_name': request.session.get('dataset_display_name'),
+    }
+    return render(request, 'session_debug.html', context)

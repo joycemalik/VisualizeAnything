@@ -16,5 +16,13 @@ urlpatterns = [
     path('save_report_blocks/', views.save_report_blocks, name='save_report_blocks'),
     path('save_report/<str:format>/', views.save_report, name='save_report'),
     path('get_available_charts/', views.get_available_charts, name='get_available_charts'),
+    path('get_chat_history/', views.get_chat_history, name='get_chat_history'),
     path('clear_session/', views.clear_session_data_endpoint, name='clear_session'),
+    path('session_cleanup/', views.session_cleanup_endpoint, name='session_cleanup'),
+    path('session_end/', views.session_end_cleanup, name='session_end'),
+    path('advanced_viz/', views.advanced_visualization_builder, name='advanced_viz'),
+    path('advanced_viz/<str:dataset_name>/', views.advanced_visualization_builder, name='advanced_viz_with_dataset'),
+    path('debug_session/', views.debug_session, name='debug_session'),
+    path('generate_advanced_chart/', views.generate_advanced_chart, name='generate_advanced_chart'),
+    path('get_column_values/', views.get_column_values, name='get_column_values'),
 ]

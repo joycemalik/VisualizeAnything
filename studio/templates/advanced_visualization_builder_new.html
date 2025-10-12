@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Chart Builder - {{ dataset_name }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #7059f2;
+            --secondary-color: #533cd0ff;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --dark-bg: #212121;
+            --card-bg: #2f2f2f;
+            --panel-bg: #7059f2;
+            --border-color: #4d4d4f;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+        }
+
+        ::-webkit-scrollbar {
+      height: 8px;
+      width: 9px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #c3c3eeff;
+      border-radius: 0px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #888;
+    }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Inter", sans-serif;
+            background: #0f0f0f;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: var(--card-bg);
+            padding: 20px;
+            border: 1px solid #4d4d4f;
+            border-radius: 0px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 1.4rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            background: var(--primary-color);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 0px;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            background: #533cd0ff;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            height: calc(100vh - 200px);
+        }
+
+        .sidebar {
+            background: var(--card-bg);
+            border-radius: 0px;
+            border: 1px solid #4d4d4f;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .chart-area {
+            background: var(--card-bg);
+            border-radius: 0px;
+            border: 1px solid #4d4d4f;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section h3 {
+            color: white;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            font-size:15px;
+            gap: 10px;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .chart-btn {
+            background: var(--panel-bg);
+            border: 2px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 15px;
+            border-radius: 0px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            text-align: center;
+        }
+
+        .chart-btn:hover {
+            border-color: white;
+            background: var(--secondary-color);
+        }
+
+        .chart-btn.active {
+            border-color: var(--primary-color);
+            background: var(--primary-color);
+        }
+
+        .chart-btn i {
+            font-size: 1.5rem;
+        }
+
+        .config-panel {
+            background: #000000;
+            border-radius: 0px;
+            border: 1px solid #4d4d4f;
+            padding: 20px;
+            min-height: 200px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            color: var(--text-primary);
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .generate-btn {
+            background: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 0px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .generate-btn:hover {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+
+        .chart-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .chart-placeholder {
+            color: #7a7a7a;
+            font-size: 1.2rem;
+        }
+
+        .chart-result {
+            width: 100%;
+            overflow: auto;
+        }
+
+        .loading {
+            display: none;
+            color: var(--primary-color);
+            font-size: 1.1rem;
+        }
+
+        .multi-select {
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            max-height: 120px;
+            overflow-y: auto;
+            background: var(--card-bg);
+        }
+
+        .multi-select-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s;
+        }
+
+        .multi-select-item:hover {
+            background: var(--panel-bg);
+        }
+
+        .multi-select-item.selected {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .multi-select-item:last-child {
+            border-bottom: none;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .palette-option {
+            background: #000000;
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .palette-option:hover {
+            border-color: white;
+            background: var(--secondary-color);
+        }
+
+        .palette-option.active {
+            border-color: var(--primary-color);
+            background: #000000;
+        }
+
+        .palette-preview {
+            display: flex;
+            justify-content: center;
+            gap: 2px;
+            margin-bottom: 8px;
+        }
+
+        .color-sample {
+            width: 20px;
+            height: 20px;
+            border-radius: 0px;
+            border: 1px solid white;
+        }
+
+        .palette-option span {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .palette-option.active span {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-chart-line"></i>
+                Advanced Chart Builder - {{ dataset_name }}
+            </h1>
+            <a href="javascript:window.close()" class="back-btn">
+                Home
+            </a>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <!-- Chart Type Selection -->
+                <div class="section">
+                    <h3><i class="fas fa-palette"></i> Chart Type</h3>
+                    <div class="chart-grid">
+                        <div class="chart-btn" data-type="bar">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>Bar Chart</span>
+                        </div>
+                        <div class="chart-btn" data-type="line">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Line Chart</span>
+                        </div>
+                        <div class="chart-btn" data-type="scatter">
+                            <i class="fas fa-braille"></i>
+                            <span>Scatter Plot</span>
+                        </div>
+                        <div class="chart-btn" data-type="histogram">
+                            <i class="fas fa-chart-column"></i>
+                            <span>Histogram</span>
+                        </div>
+                        <div class="chart-btn" data-type="box">
+                            <i class="fas fa-box"></i>
+                            <span>Box Plot</span>
+                        </div>
+                        <div class="chart-btn" data-type="pie">
+                            <i class="fas fa-chart-pie"></i>
+                            <span>Pie Chart</span>
+                        </div>
+                        <div class="chart-btn" data-type="heatmap">
+                            <i class="fas fa-th"></i>
+                            <span>Heatmap</span>
+                        </div>
+                        <div class="chart-btn" data-type="violin">
+                            <i class="fas fa-music"></i>
+                            <span>Violin Plot</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Color Palette Selection -->
+                <div class="section">
+                    <h3><i class="fas fa-palette"></i> Color Palette</h3>
+                    <div class="palette-grid">
+                        <div class="palette-option active" data-palette="husl">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #e60049;"></div>
+                                <div class="color-sample" style="background: #0bb4ff;"></div>
+                                <div class="color-sample" style="background: #50e991;"></div>
+                                <div class="color-sample" style="background: #e6d800;"></div>
+                                <div class="color-sample" style="background: #9b19f5;"></div>
+                            </div>
+                            <span>HUSL</span>
+                        </div>
+                        <div class="palette-option" data-palette="viridis">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #440154;"></div>
+                                <div class="color-sample" style="background: #31688e;"></div>
+                                <div class="color-sample" style="background: #35b779;"></div>
+                                <div class="color-sample" style="background: #fde725;"></div>
+                                <div class="color-sample" style="background: #440154;"></div>
+                            </div>
+                            <span>Viridis</span>
+                        </div>
+                        <div class="palette-option" data-palette="plasma">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #0d0887;"></div>
+                                <div class="color-sample" style="background: #7e03a8;"></div>
+                                <div class="color-sample" style="background: #cc4778;"></div>
+                                <div class="color-sample" style="background: #f89441;"></div>
+                                <div class="color-sample" style="background: #f0f921;"></div>
+                            </div>
+                            <span>Plasma</span>
+                        </div>
+                        <div class="palette-option" data-palette="Set1">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #e41a1c;"></div>
+                                <div class="color-sample" style="background: #377eb8;"></div>
+                                <div class="color-sample" style="background: #4daf4a;"></div>
+                                <div class="color-sample" style="background: #984ea3;"></div>
+                                <div class="color-sample" style="background: #ff7f00;"></div>
+                            </div>
+                            <span>Set1</span>
+                        </div>
+                        <div class="palette-option" data-palette="Set2">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #66c2a5;"></div>
+                                <div class="color-sample" style="background: #fc8d62;"></div>
+                                <div class="color-sample" style="background: #8da0cb;"></div>
+                                <div class="color-sample" style="background: #e78ac3;"></div>
+                                <div class="color-sample" style="background: #a6d854;"></div>
+                            </div>
+                            <span>Set2</span>
+                        </div>
+                        <div class="palette-option" data-palette="Dark2">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #1b9e77;"></div>
+                                <div class="color-sample" style="background: #d95f02;"></div>
+                                <div class="color-sample" style="background: #7570b3;"></div>
+                                <div class="color-sample" style="background: #e7298a;"></div>
+                                <div class="color-sample" style="background: #66a61e;"></div>
+                            </div>
+                            <span>Dark2</span>
+                        </div>
+                        <div class="palette-option" data-palette="coolwarm">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #3b4cc0;"></div>
+                                <div class="color-sample" style="background: #6688ee;"></div>
+                                <div class="color-sample" style="background: #ccdddd;"></div>
+                                <div class="color-sample" style="background: #ee9988;"></div>
+                                <div class="color-sample" style="background: #b40426;"></div>
+                            </div>
+                            <span>Cool Warm</span>
+                        </div>
+                        <div class="palette-option" data-palette="tab10">
+                            <div class="palette-preview">
+                                <div class="color-sample" style="background: #1f77b4;"></div>
+                                <div class="color-sample" style="background: #ff7f0e;"></div>
+                                <div class="color-sample" style="background: #2ca02c;"></div>
+                                <div class="color-sample" style="background: #d62728;"></div>
+                                <div class="color-sample" style="background: #9467bd;"></div>
+                            </div>
+                            <span>Tab10</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuration Panel -->
+                <div class="section">
+                    <h3><i class="fas fa-cog"></i> Configuration</h3>
+                    <div class="config-panel" id="configPanel">
+                        <p class="chart-placeholder">Select a chart type to configure options</p>
+                    </div>
+                    
+                    <button class="generate-btn" id="generateBtn" onclick="generateChart()">
+                        <i class="fas fa-magic"></i> Generate Chart
+                    </button>
+                </div>
+            </div>
+
+            <div class="chart-area">
+                <div class="chart-display">
+                    <div class="chart-placeholder" id="chartPlaceholder">
+                        <i class="fas fa-chart-area" style="font-size: 4rem; margin-bottom: 20px; opacity: 0.3;"></i>
+                        <p>Select a chart type and configure options to generate your visualization</p>
+                    </div>
+                    <div class="loading" id="loadingIndicator">
+                        <i class="fas fa-spinner fa-spin"></i> Generating chart...
+                    </div>
+                    <div class="chart-result" id="chartResult"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Configuration Templates -->
+    
+    <!-- Bar Chart Config -->
+    <script type="text/template" id="barChartConfig">
+        <div class="form-group">
+            <label>X-Axis Column</label>
+            <select class="form-control" id="xColumn">
+                {% for column in columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Y-Axis Columns</label>
+            <div class="multi-select" id="yColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Line Chart Config -->
+    <script type="text/template" id="lineChartConfig">
+        <div class="form-group">
+            <label>X-Axis Column</label>
+            <select class="form-control" id="xColumn">
+                {% for column in columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Y-Axis Columns</label>
+            <div class="multi-select" id="yColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Scatter Plot Config -->
+    <script type="text/template" id="scatterChartConfig">
+        <div class="form-group">
+            <label>X-Axis Column</label>
+            <select class="form-control" id="xColumn">
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Y-Axis Column</label>
+            <select class="form-control" id="yColumn">
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Color By (Optional)</label>
+            <select class="form-control" id="hueColumn">
+                <option value="">None</option>
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Histogram Config -->
+    <script type="text/template" id="histogramChartConfig">
+        <div class="form-group">
+            <label>Columns</label>
+            <div class="multi-select" id="histogramColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Number of Bins</label>
+            <input type="number" class="form-control" id="bins" value="30" min="5" max="100">
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Box Plot Config -->
+    <script type="text/template" id="boxChartConfig">
+        <div class="form-group">
+            <label>Y-Axis Columns</label>
+            <div class="multi-select" id="yColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Group By (Optional)</label>
+            <select class="form-control" id="xColumn">
+                <option value="">None</option>
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Pie Chart Config -->
+    <script type="text/template" id="pieChartConfig">
+        <div class="form-group">
+            <label>Category Column</label>
+            <select class="form-control" id="categoryColumn">
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Value Column (Optional)</label>
+            <select class="form-control" id="valueColumn">
+                <option value="">Count of records</option>
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Heatmap Config -->
+    <script type="text/template" id="heatmapChartConfig">
+        <div class="form-group">
+            <label>Columns for Correlation</label>
+            <div class="multi-select" id="heatmapColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <!-- Violin Plot Config -->
+    <script type="text/template" id="violinChartConfig">
+        <div class="form-group">
+            <label>Y-Axis Columns</label>
+            <div class="multi-select" id="yColumns">
+                {% for column in numeric_columns %}
+                <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Group By (Optional)</label>
+            <select class="form-control" id="xColumn">
+                <option value="">None</option>
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Chart Title</label>
+            <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
+        </div>
+    </script>
+
+    <script>
+        // Global variables
+        let currentChartType = '';
+        let selectedPalette = 'husl';  // Default palette
+        
+        // Get CSRF token
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Advanced Chart Builder loaded');
+            
+            // Chart type selection
+            document.querySelectorAll('.chart-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    console.log('Chart button clicked:', this.dataset.type);
+                    
+                    // Update active state
+                    document.querySelectorAll('.chart-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Update chart type
+                    currentChartType = this.dataset.type;
+                    
+                    // Load configuration
+                    loadChartConfiguration(currentChartType);
+                });
+            });
+
+            // Color palette selection
+            document.querySelectorAll('.palette-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    console.log('Color palette clicked:', this.dataset.palette);
+                    
+                    // Update active state
+                    document.querySelectorAll('.palette-option').forEach(p => p.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Update selected palette
+                    selectedPalette = this.dataset.palette;
+                    console.log('Selected color palette:', selectedPalette);
+                });
+            });
+        });
+
+        function loadChartConfiguration(chartType) {
+            console.log('Loading configuration for:', chartType);
+            
+            const configPanel = document.getElementById('configPanel');
+            const template = document.getElementById(chartType + 'ChartConfig');
+            
+            if (template) {
+                configPanel.innerHTML = template.innerHTML;
+                setupMultiSelect();
+                console.log('Configuration loaded successfully');
+            } else {
+                configPanel.innerHTML = '<p class="chart-placeholder">Configuration not available for this chart type</p>';
+                console.error('Template not found for:', chartType);
+            }
+        }
+
+        function setupMultiSelect() {
+            document.querySelectorAll('.multi-select-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    this.classList.toggle('selected');
+                });
+            });
+        }
+
+        function getSelectedValues(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return [];
+            
+            const selected = container.querySelectorAll('.multi-select-item.selected');
+            return Array.from(selected).map(item => item.dataset.value);
+        }
+
+        function getFormValue(fieldId) {
+            const field = document.getElementById(fieldId);
+            return field ? field.value : '';
+        }
+
+        function generateChart() {
+            if (!currentChartType) {
+                alert('Please select a chart type first');
+                return;
+            }
+
+            console.log('Generating chart:', currentChartType);
+
+            // Show loading
+            document.getElementById('chartPlaceholder').style.display = 'none';
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('chartResult').innerHTML = '';
+
+            // Collect configuration
+            let config = {
+                title: getFormValue('chartTitle') || `${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`,
+                palette: selectedPalette || 'husl'  // Include selected color palette
+            };
+
+            // Chart-specific configuration
+            switch(currentChartType) {
+                case 'bar':
+                case 'line':
+                    config.x_column = getFormValue('xColumn');
+                    config.y_columns = getSelectedValues('yColumns');
+                    break;
+                    
+                case 'scatter':
+                    config.x_column = getFormValue('xColumn');
+                    config.y_column = getFormValue('yColumn');
+                    config.hue_column = getFormValue('hueColumn');
+                    break;
+                    
+                case 'histogram':
+                    config.columns = getSelectedValues('histogramColumns');
+                    config.bins = parseInt(getFormValue('bins')) || 30;
+                    break;
+                    
+                case 'box':
+                case 'violin':
+                    config.y_columns = getSelectedValues('yColumns');
+                    config.x_column = getFormValue('xColumn');
+                    break;
+                    
+                case 'pie':
+                    config.category_column = getFormValue('categoryColumn');
+                    config.value_column = getFormValue('valueColumn');
+                    break;
+                    
+                case 'heatmap':
+                    config.columns = getSelectedValues('heatmapColumns');
+                    break;
+            }
+
+            console.log('Chart config:', config);
+
+            // Send request
+            fetch('/generate_advanced_chart/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chart_type: currentChartType,
+                    config: config
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading
+                document.getElementById('loadingIndicator').style.display = 'none';
+                
+                if (data.success) {
+                    // Show chart
+                    document.getElementById('chartResult').innerHTML = data.chart_html;
+                    console.log('Chart generated successfully');
+                } else {
+                    // Show error
+                    document.getElementById('chartPlaceholder').style.display = 'block';
+                    alert('Error: ' + (data.error || 'Unknown error occurred'));
+                    console.error('Chart generation error:', data.error);
+                }
+            })
+            .catch(error => {
+                // Hide loading and show error
+                document.getElementById('loadingIndicator').style.display = 'none';
+                document.getElementById('chartPlaceholder').style.display = 'block';
+                alert('Error: ' + error.message);
+                console.error('Request error:', error);
+            });
+        }
+    </script>
+</body>
+</html>
