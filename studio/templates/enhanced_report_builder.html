@@ -51,7 +51,47 @@
             --success-color: #10b981;
             --danger-color: #ef4444;
             --warning-color: #f59e0b;
+            /* Enhanced variables from dataset_preview */
+            --bg-primary: #212121;
+            --bg-secondary: #2f2f2f;
+            --bg-tertiary: #3c3c3c;
+            --text-muted: #8e8ea0;
+            --border-light: #565869;
+            --sidebar-bg: #171717;
+            --chart-bg: #2f2f2f;
+            --btn-primary: #7059f2ff;
+            --btn-primary-hover: #533cd0ff;
+            --btn-secondary: #2f2f2f;
+            --btn-secondary-hover: #533cd0ff;
+            --error-bg: #4a1e1e;
+            --error-border: #c53030;
+            --error-text: #fc8181;
+            --success-bg: #1e4a28;
+            --success-border: #68d391;
+            --shadow: rgba(0,0,0,0.3);
+            --shadow-lg: rgba(0,0,0,0.5);
+            --message-user-bg: #2f2f2f;
+            --message-bot-bg: transparent;
         }
+        /* For Chrome, Edge, Safari */
+        ::-webkit-scrollbar {
+        height: 8px;   /* horizontal scrollbar height */
+        width: 9px;    /* vertical scrollbar width */
+        }
+
+        ::-webkit-scrollbar-track {
+        background: transparent; /* or var(--bg-secondary) */
+        }
+
+        ::-webkit-scrollbar-thumb {
+        background: #c3c3eeff;         /* scrollbar handle */
+        border-radius: 0px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+        background: #888;
+        }
+    
 
         body {
             background: var(--dark-bg);
@@ -65,72 +105,277 @@
             min-height: 100vh;
         }
 
-        /* Sidebar Styles */
+        /* Sidebar Navigation - Enhanced Design from dataset_preview */
         .sidebar {
-            width: 300px;
-            background: var(--card-bg);
+            width: 260px;
+            background: var(--sidebar-bg);
             border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .dataset-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dataset-icon {
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .dataset-meta {
+            font-size: 12px;
+            margin-top: 4px;
+            color: var(--text-muted);
+        }
+
+        .dataset-info {
+            font-size: 14px;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            margin-top: 10px;
+        }
+
+        .sidebar-content {
+            flex: 1;
             padding: 20px;
             overflow-y: auto;
         }
 
-        .sidebar h4 {
-            color: var(--primary-color);
+        /* Sidebar Tabs */
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
             margin-bottom: 20px;
-            font-weight: 600;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px 8px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            color: var(--btn-primary);
+            border-bottom-color: var(--btn-primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .tool-section {
             margin-bottom: 30px;
         }
 
-        .tool-section h6 {
-            color: white;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            font-size: 0.8rem;
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .tool-btn {
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 8px;
             width: 100%;
             padding: 12px 16px;
             margin-bottom: 8px;
-            background: var(--dark-bg);
+            background: var(--btn-secondary);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
             text-decoration: none;
             border-radius: 0px;
             transition: all 0.2s ease;
             cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .tool-btn:hover {
-            background: var(--primary-color);
+            background: var(--btn-primary);
             color: white;
-            border-color: var(--primary-color);
+            border-color: var(--btn-primary);
         }
 
         .tool-btn i {
-            margin-right: 8px;
             width: 16px;
             text-align: center;
         }
 
-        /* Main Content Area */
+        .btn-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+        }
+
+        .action-buttons {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: var(--btn-primary);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 0px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+            width: 100%;
+        }
+
+        .action-btn:hover {
+            background: var(--btn-primary-hover);
+        }
+
+        .action-btn.secondary {
+            background: var(--btn-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .action-btn.secondary:hover {
+            background: var(--btn-secondary-hover);
+        }
+
+        /* Style Controls */
+        .style-controls {
+            margin-top: 10px;
+        }
+
+        .style-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .style-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-control-sm {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 0px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .color-picker {
+            width: 40px;
+            height: 24px;
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        /* Main Content Area - Enhanced to work with new sidebar */
         .content-area {
             flex: 1;
             display: flex;
             flex-direction: column;
+            background: var(--bg-primary);
+            position: relative;
+            margin-left: 260px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .content-area.sidebar-collapsed {
+            margin-left: 0;
         }
 
         .content-header {
-            background: var(--card-bg);
+            background: var(--bg-primary);
             border-bottom: 1px solid var(--border-color);
-            padding: 20px 30px;
+            padding: 16px 24px;
             display: flex;
-            justify-content: space-between; /* Corrected value */
+            justify-content: space-between;
             align-items: center;
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 260px;
+            z-index: 1001;
+            transition: left 0.3s ease;
+        }
+
+        .content-header.sidebar-collapsed {
+            left: 0;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-title {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .header-spacer {
+            width: 40px; /* Same width as the sidebar toggle button to balance the layout */
         }
 
         .content-header h2 {
@@ -159,12 +404,12 @@
             color: white;
         }
 
-        /* Report Canvas */
+        /* Report Canvas - Updated for fixed header to match dataset_preview.html */
         .report-canvas {
             flex: 1;
             padding: 30px;
             overflow-y: auto;
-            background: #f5f5f5;
+            margin-top: 90px; /* Match dataset_preview.html exactly */
         }
 
         .report-page {
@@ -173,8 +418,8 @@
             background: white;
             min-height: 1000px;
             padding: 60px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            border-radius: 8px;
+            
+            border-radius: 0px;
             position: relative;
         }
 
@@ -372,8 +617,8 @@
 
         /* Style controls */
         .style-controls {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
+            background: #2f2f2f;
+            border: 1px solid #4d4d4f;
             border-radius: 0px;
             padding: 15px;
             margin-top: 20px;
@@ -400,20 +645,47 @@
             cursor: pointer;
         }
 
-        /* Responsive */
+        /* Responsive - Enhanced for new sidebar */
         @media (max-width: 768px) {
-            .main-container {
-                flex-direction: column;
-            }
-            
             .sidebar {
                 width: 100%;
                 height: auto;
+                position: relative;
+                transform: none;
+            }
+            
+            .content-area {
+                margin-left: 0;
+            }
+            
+            .content-header {
+                left: 0;
+                position: relative;
+            }
+            
+            .report-canvas {
+                margin-top: 0;
             }
             
             .report-page {
                 padding: 30px 20px;
             }
+        }
+
+        /* Control buttons for sidebar toggle */
+        .control-btn {
+            background: var(--btn-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 0px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .control-btn:hover {
+            background: var(--btn-primary);
+            color: white;
         }
 
         /* Animation classes */
@@ -438,80 +710,125 @@
 </head>
 <body>
     <div class="main-container">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <h4 > Report Tools</h4>
+        <!-- Enhanced Sidebar Navigation -->
+        <div class="sidebar" id="sidebarNav">
+            <div class="sidebar-header">
+                <h1>Datanaut<span style="color: #7c66f8ff;">.ai</span></h1>
+                <div class="dataset-info">
+                    <div class="dataset-title">
+                        <img src="{% load static %}{% static 'folder.png' %}" alt="Report Icon" class="dataset-icon" style="width: 20px;">
+                        <strong>Report Builder</strong>
+                    </div>
+                    <div style="font-size: 12px; margin-top: 4px; color: var(--text-muted);">
+                        {{ dataset_name }} • {{ total_blocks }} elements
+                    </div>
+                </div>
+            </div>  
             
-            <div class="tool-section">
-                <h6>Add Elements</h6>
-                <button class="tool-btn" onclick="addTextBlock()">
-                    <i class="fas fa-font"></i> Add Text
-                </button>
-                <button class="tool-btn" onclick="addTitleBlock()">
-                    <i class="fas fa-heading"></i> Add Title
-                </button>
-                <button class="tool-btn" onclick="addImageBlock()">
-                    <i class="fas fa-image"></i> Add Image
-                </button>
-                <button class="tool-btn" onclick="addPageBreak()">
-                    <i class="fas fa-file-alt"></i> Page Break
-                </button>
-            </div>
+            <div class="sidebar-content">
+                <!-- Tab Navigation -->
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="elements" onclick="switchTab('elements', this)">Elements</button>
+                    <button class="tab-btn" data-tab="styling" onclick="switchTab('styling', this)">Styling</button>
+                    <button class="tab-btn" data-tab="export" onclick="switchTab('export', this)">Export</button>
+                </div>
 
-            <div class="tool-section">
-                <h6>Data Elements</h6>
-                <button class="tool-btn" onclick="showAvailableCharts()">
-                    <i class="fas fa-chart-bar"></i> Insert Chart
-                </button>
-                <button class="tool-btn" onclick="showChatHistory()">
-                    <i class="fas fa-comments"></i> Chat History
-                </button>
-                <button class="tool-btn" onclick="addSQLBlock()">
-                    <i class="fas fa-database"></i> SQL Query
-                </button>
-            </div>
+                <!-- Elements Tab -->
+                <div class="tab-content active" id="elements-tab">
+                    <div class="tool-section">
+                        <div class="section-title"><i class="fas fa-plus"></i> Add Elements</div>
+                        <button class="tool-btn" onclick="addTextBlock()">
+                            <i class="fas fa-font"></i> Add Text
+                        </button>
+                        <button class="tool-btn" onclick="addTitleBlock()">
+                            <i class="fas fa-heading"></i> Add Title
+                        </button>
+                        <button class="tool-btn" onclick="addImageBlock()">
+                            <i class="fas fa-image"></i> Add Image
+                        </button>
+                        <button class="tool-btn" onclick="addPageBreak()">
+                            <i class="fas fa-file-alt"></i> Page Break
+                        </button>
+                    </div>
 
-            <div class="tool-section">
-                <h6>Styling</h6>
-                <div class="style-controls">
-                    <div class="style-row">
-                        <span class="style-label">Font Size:</span>
-                        <select id="fontSize" class="form-control form-control-sm" onchange="applyGlobalStyle()">
-                            <option value="12px">Small</option>
-                            <option value="14px" selected>Normal</option>
-                            <option value="16px">Large</option>
-                            <option value="18px">X-Large</option>
-                        </select>
+                    <div class="tool-section">
+                        <div class="section-title"><i class="fas fa-database"></i> Data Elements</div>
+                        <button class="tool-btn" onclick="showAvailableCharts()">
+                            <i class="fas fa-chart-bar"></i> Insert Chart
+                        </button>
+                        <button class="tool-btn" onclick="showChatHistory()">
+                            <i class="fas fa-comments"></i> Chat History
+                        </button>
+                        <button class="tool-btn" onclick="addSQLBlock()">
+                            <i class="fas fa-database"></i> SQL Query
+                        </button>
                     </div>
-                    <div class="style-row">
-                        <span class="style-label">Theme:</span>
-                        <select id="reportTheme" class="form-control form-control-sm" onchange="changeReportTheme()">
-                            <option value="default">Default</option>
-                            <option value="minimal">Minimal</option>
-                            <option value="corporate">Corporate</option>
-                            <option value="creative">Creative</option>
-                        </select>
+                </div>
+
+                <!-- Styling Tab -->
+                <div class="tab-content" id="styling-tab">
+                    <div class="tool-section">
+                        <div class="section-title"><i class="fas fa-palette"></i> Styling Options</div>
+                        <div class="style-controls">
+                            <div class="style-row">
+                                <span class="style-label">Font Size:</span>
+                                <select id="fontSize" class="form-control form-control-sm" onchange="applyGlobalStyle()">
+                                    <option value="12px">Small</option>
+                                    <option value="14px" selected>Normal</option>
+                                    <option value="16px">Large</option>
+                                    <option value="18px">X-Large</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <span class="style-label">Theme:</span>
+                                <select id="reportTheme" class="form-control form-control-sm" onchange="changeReportTheme()">
+                                    <option value="default">Default</option>
+                                    <option value="minimal">Minimal</option>
+                                    <option value="corporate">Corporate</option>
+                                    <option value="creative">Creative</option>
+                                </select>
+                            </div>
+                            <div class="style-row">
+                                <span class="style-label">Accent:</span>
+                                <input type="color" id="accentColor" class="color-picker" value="#7059f2" onchange="applyGlobalStyle()">
+                            </div>
+                        </div>
                     </div>
-                    <div class="style-row">
-                        <span class="style-label">Accent:</span>
-                        <input type="color" id="accentColor" class="color-picker" value="#7059f2" onchange="applyGlobalStyle()">
+                </div>
+
+                <!-- Export Tab -->
+                <div class="tab-content" id="export-tab">
+                    <div class="tool-section">
+                        <div class="section-title"><i class="fas fa-download"></i> Export Options</div>
+                        <button class="tool-btn" onclick="exportReport('pdf')">
+                            <i class="fas fa-file-pdf"></i> Export PDF
+                        </button>
+                        <button class="tool-btn" onclick="exportReport('pptx')">
+                            <i class="fas fa-file-powerpoint"></i> Export PPTX
+                        </button>
+                        <button class="tool-btn" onclick="exportReport('png')">
+                            <i class="fas fa-file-image"></i> Export Image
+                        </button>
+                        <button class="tool-btn" onclick="saveReportState()">
+                            <i class="fas fa-save"></i> Save State
+                        </button>
                     </div>
                 </div>
             </div>
-
-            <div class="tool-section">
-                <h6>Export</h6>
-                <button class="tool-btn" onclick="exportReport('pdf')">
-                    <i class="fas fa-file-pdf"></i> Export PDF
+            
+            <div class="action-buttons">
+                <button class="action-btn" onclick="previewReport()">
+                    <img src="{% load static %}{% static 'ai.png' %}" alt="preview" class="btn-icon"/>
+                    Preview Report
                 </button>
-                <button class="tool-btn" onclick="exportReport('pptx')">
-                    <i class="fas fa-file-powerpoint"></i> Export PPTX
+                <button class="action-btn secondary" onclick="clearSession()">
+                    <i class="fas fa-broom"></i> Clear Session
                 </button>
-                <button class="tool-btn" onclick="exportReport('png')">
-                    <i class="fas fa-file-image"></i> Export Image
+                <button class="action-btn secondary" onclick="undoLastAction()">
+                    <i class="fas fa-undo"></i> Undo Last Action
                 </button>
-                <button class="tool-btn" onclick="saveReportState()">
-                    <i class="fas fa-save"></i> Save State
+                <button class="action-btn secondary" onclick="clearReport()">
+                    <i class="fas fa-trash"></i> Clear All
                 </button>
             </div>
         </div>
@@ -519,24 +836,11 @@
         <!-- Main Content -->
         <div class="content-area">
             <div class="content-header">
-                <div>
-                    <h2>Report Builder</h2>
-                    <small class="text-muted">{{ dataset_name }} - {{ total_blocks }} elements</small>
+                <button class="control-btn" id="sidebarToggle" onclick="toggleSidebar()">☰</button>
+                <div class="header-title">
+                    <h2 style="margin: 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Report Builder</h2>
                 </div>
-                <div class="header-actions">
-                    <button class="btn-export" onclick="previewReport()">
-                        <i class="fas fa-eye"></i> Preview
-                    </button>
-                    <button class="btn-export" onclick="clearSession()">
-                        <i class="fas fa-broom"></i> Clear Session
-                    </button>
-                    <button class="btn-export" onclick="undoLastAction()">
-                        <i class="fas fa-undo"></i> Undo
-                    </button>
-                    <button class="btn-export" onclick="clearReport()">
-                        <i class="fas fa-trash"></i> Clear All
-                    </button>
-                </div>
+                <div class="header-spacer"></div>
             </div>
 
             <div class="report-canvas">
@@ -718,7 +1022,132 @@
             initializeSortable();
             initializeQuill();
             saveCurrentState();
+            initializeSidebarTabs();
+            initializeSidebarToggle();
         });
+
+        function initializeSidebarTabs() {
+            // Initialize sidebar tabs with debugging
+            console.log('Initializing sidebar tabs...');
+            
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            console.log('Found tab buttons:', tabBtns.length);
+            console.log('Found tab contents:', tabContents.length);
+            
+            tabBtns.forEach((btn, index) => {
+                console.log(`Tab button ${index}:`, btn.getAttribute('data-tab'));
+                
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('Tab clicked:', this.getAttribute('data-tab'));
+                    
+                    const targetTab = this.getAttribute('data-tab');
+                    
+                    // Remove active class from all tabs and contents
+                    tabBtns.forEach(t => {
+                        t.classList.remove('active');
+                        console.log('Removed active from:', t.getAttribute('data-tab'));
+                    });
+                    
+                    tabContents.forEach(c => {
+                        c.classList.remove('active');
+                        console.log('Removed active from content:', c.id);
+                    });
+                    
+                    // Add active class to clicked tab
+                    this.classList.add('active');
+                    console.log('Added active to tab:', targetTab);
+                    
+                    // Show corresponding content
+                    const targetContent = document.getElementById(targetTab + '-tab');
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                        console.log('Added active to content:', targetContent.id);
+                    } else {
+                        console.error('Could not find content for:', targetTab + '-tab');
+                    }
+                });
+            });
+        }
+
+        // Simple tab switching function as backup
+        function switchTab(tabName, clickedBtn) {
+            console.log('switchTab called with:', tabName);
+            
+            // Remove active class from all tab buttons
+            const allTabBtns = document.querySelectorAll('.tab-btn');
+            allTabBtns.forEach(btn => btn.classList.remove('active'));
+            
+            // Remove active class from all tab contents
+            const allTabContents = document.querySelectorAll('.tab-content');
+            allTabContents.forEach(content => content.classList.remove('active'));
+            
+            // Add active class to clicked button
+            clickedBtn.classList.add('active');
+            
+            // Show corresponding content
+            const targetContent = document.getElementById(tabName + '-tab');
+            if (targetContent) {
+                targetContent.classList.add('active');
+                console.log('Successfully switched to:', tabName);
+            } else {
+                console.error('Could not find content for:', tabName + '-tab');
+            }
+        }
+
+        // Simple sidebar toggle function as backup
+        function toggleSidebar() {
+            console.log('toggleSidebar called');
+            
+            const sidebar = document.getElementById('sidebarNav');
+            const contentArea = document.querySelector('.content-area');
+            const contentHeader = document.querySelector('.content-header');
+            
+            if (sidebar) {
+                sidebar.classList.toggle('collapsed');
+                console.log('Sidebar collapsed:', sidebar.classList.contains('collapsed'));
+            }
+            
+            if (contentArea) {
+                contentArea.classList.toggle('sidebar-collapsed');
+                console.log('Content area collapsed:', contentArea.classList.contains('sidebar-collapsed'));
+            }
+            
+            if (contentHeader) {
+                contentHeader.classList.toggle('sidebar-collapsed');
+                console.log('Content header collapsed:', contentHeader.classList.contains('sidebar-collapsed'));
+            }
+        }
+
+        function initializeSidebarToggle() {
+            console.log('Initializing sidebar toggle...');
+            
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebarNav');
+            const contentArea = document.querySelector('.content-area');
+            const contentHeader = document.querySelector('.content-header');
+            
+            console.log('Found elements:', {
+                sidebarToggle: !!sidebarToggle,
+                sidebar: !!sidebar,
+                contentArea: !!contentArea,
+                contentHeader: !!contentHeader
+            });
+            
+            if (sidebarToggle && sidebar) {
+                sidebarToggle.addEventListener('click', function() {
+                    console.log('Event listener triggered');
+                    sidebar.classList.toggle('collapsed');
+                    contentArea.classList.toggle('sidebar-collapsed');
+                    contentHeader.classList.toggle('sidebar-collapsed');
+                });
+                console.log('Event listener added successfully');
+            } else {
+                console.error('Could not find sidebar toggle elements');
+            }
+        }
 
         function initializeSortable() {
             new Sortable(document.getElementById('reportPage'), {
