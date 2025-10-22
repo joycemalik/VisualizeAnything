@@ -26,7 +26,12 @@ from io import BytesIO
 
 # Load environment variables
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+print(f"DEBUG MODULE INIT: Loading GROQ_API_KEY...")
+groq_key = os.getenv("GROQ_API_KEY")
+print(f"DEBUG MODULE INIT: GROQ_API_KEY loaded: {groq_key[:20] if groq_key else 'NOT FOUND'}...")
+print(f"DEBUG MODULE INIT: GROQ_API_KEY length: {len(groq_key) if groq_key else 0}")
+client = Groq(api_key=groq_key)
+print(f"DEBUG MODULE INIT: Groq client initialized successfully")
 
 # Supabase client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -936,6 +941,12 @@ def run_query(request, dataset_name):
     prompt_json = make_sql_prompt(dataset_name, columns, user_input)
 
     try:
+        # DEBUG: Check if client and API key are available
+        print(f"DEBUG: client object type: {type(client)}")
+        print(f"DEBUG: GROQ_API_KEY exists: {bool(os.getenv('GROQ_API_KEY'))}")
+        print(f"DEBUG: GROQ_API_KEY first 20 chars: {os.getenv('GROQ_API_KEY')[:20] if os.getenv('GROQ_API_KEY') else 'NOT FOUND'}")
+        print(f"DEBUG: Calling Groq API with model: llama-3.1-8b-instant")
+        
         # Call model — keep temp 0; send the JSON as the sole message content
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -944,6 +955,7 @@ def run_query(request, dataset_name):
             # If your client supports it, uncomment to force JSON:
             # response_format={"type": "json_object"},
         )
+        print(f"DEBUG: API call successful!")
         raw = response.choices[0].message.content.strip()
         obj = extract_top_level_json(raw)
 
@@ -1059,6 +1071,10 @@ def run_query(request, dataset_name):
         })
 
     except Exception as e:
+        # DEBUG: Print full error details
+        import traceback
+        print(f"DEBUG ERROR: {type(e).__name__}: {str(e)}")
+        print(f"DEBUG ERROR TRACEBACK:\n{traceback.format_exc()}")
         return JsonResponse({"query": user_input or "", "result": [], "error": f"Failed to generate/parse SQL: {str(e)}"})
 
     finally:
@@ -1188,10 +1204,25 @@ def generate_comprehensive_pdf(blocks):
         
         story = []
         
-        # Add title
+        # Add professional title page
+        story.append(Spacer(1, 100))
         story.append(Paragraph("Data Analysis Report", title_style))
-        story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", styles['Normal']))
-        story.append(Spacer(1, 30))
+        story.append(Spacer(1, 12))
+        
+        # Add subtitle with better formatting
+        subtitle_style = ParagraphStyle(
+            'Subtitle',
+            parent=styles['Normal'],
+            fontSize=12,
+            textColor=colors.HexColor('#666666'),
+            alignment=1  # Center
+        )
+        story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", subtitle_style))
+        story.append(Spacer(1, 50))
+        
+        # Add a separator line
+        from reportlab.platypus import HRFlowable
+        story.append(HRFlowable(width="80%", thickness=2, color=colors.HexColor('#4F46E5'), spaceBefore=10, spaceAfter=30))
         
         # Process blocks
         for i, block in enumerate(blocks):
@@ -1461,8 +1492,38 @@ def generate_comprehensive_pdf(blocks):
                 
             elif block_type == 'text':
                 content = block.get('content', '')
-                story.append(Paragraph(content, styles['Normal']))
-                story.append(Spacer(1, 15))
+                # Clean HTML tags and decode entities
+                clean_content = re.sub('<[^<]+?>', '', content) if content else ''
+                clean_content = unescape(clean_content)
+                if clean_content.strip():
+                    story.append(Paragraph(clean_content, styles['Normal']))
+                    story.append(Spacer(1, 15))
+                    
+            elif block_type == 'title':
+                title_text = block.get('title', block.get('content', ''))
+                # Clean HTML and get plain text
+                clean_title = re.sub('<[^<]+?>', '', title_text) if title_text else ''
+                clean_title = unescape(clean_title)
+                if clean_title.strip():
+                    # Create custom title style for h1 headings
+                    heading_style = ParagraphStyle(
+                        'ReportTitle',
+                        parent=styles['Heading2'],
+                        fontSize=18,
+                        spaceAfter=20,
+                        spaceBefore=10,
+                        textColor=colors.HexColor('#2E86AB'),
+                        fontName='Helvetica-Bold'
+                    )
+                    story.append(Paragraph(clean_title, heading_style))
+                    story.append(Spacer(1, 10))
+                    
+            elif block_type == 'sql':
+                sql_query = block.get('sql_query', block.get('content', ''))
+                if sql_query:
+                    story.append(Paragraph("<b>SQL Query:</b>", styles['Heading4']))
+                    story.append(Paragraph(f"<font name='Courier' size=9>{sql_query}</font>", code_style))
+                    story.append(Spacer(1, 15))
         
         # Build PDF
         doc.build(story)

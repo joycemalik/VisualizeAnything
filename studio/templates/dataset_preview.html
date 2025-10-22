@@ -775,7 +775,7 @@
 
     .input-container {
       display: flex;
-      gap: 12px;
+      gap: 8px;
       align-items: stretch;
     }
 
@@ -819,6 +819,31 @@
     .send-btn:disabled {
       background: var(--text-muted);
       cursor: not-allowed;
+    }
+
+    .voice-btn {
+      background: transparent;
+      color: var(--btn-primary);
+      border: 2px solid var(--btn-primary);
+      border-radius: 0px;
+      padding: 0px 16px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.2s ease;
+      height: 100%%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .voice-btn:hover {
+      background: var(--btn-primary);
+      color: white;
+      transform: scale(1.05);
+    }
+
+    .voice-btn i {
+      pointer-events: none;
     }
 
     /* Chart styles */
@@ -1456,6 +1481,9 @@
               placeholder="Ask me anything about your data..."
               rows="1"
             ></textarea>
+            <button class="voice-btn" id="voiceBtn" title="Voice input (Coming soon)" onclick="alert('🎤 Voice feature coming soon!')">
+              <i class="fas fa-microphone"></i>
+            </button>
             <button class="send-btn" id="sendBtn" onclick="sendQuery()">Send</button>
           </div>
         </div>

@@ -235,6 +235,21 @@
             font-weight: 500;
         }
 
+        .tool-btn.export-btn {
+            background: linear-gradient(135deg, var(--btn-primary) 0%, var(--btn-primary-hover) 100%);
+            border: 2px solid var(--btn-primary);
+            color: white;
+            font-weight: 600;
+            padding: 14px 16px;
+            box-shadow: 0 2px 8px rgba(112, 89, 242, 0.3);
+        }
+
+        .tool-btn.export-btn:hover {
+            background: linear-gradient(135deg, var(--btn-primary-hover) 0%, var(--btn-primary) 100%);
+            box-shadow: 0 4px 12px rgba(112, 89, 242, 0.5);
+            transform: translateY(-1px);
+        }
+
         .tool-btn:hover {
             background: var(--btn-primary);
             color: white;
@@ -800,14 +815,29 @@
                 <div class="tab-content" id="export-tab">
                     <div class="tool-section">
                         <div class="section-title"><i class="fas fa-download"></i> Export Options</div>
-                        <button class="tool-btn" onclick="exportReport('pdf')">
-                            <i class="fas fa-file-pdf"></i> Export PDF
+                        
+                        <!-- TEST BUTTON -->
+                        <button class="tool-btn" onclick="alert('Button works!'); console.log('Export tab button clicked!');" style="background: red; color: white; margin-bottom: 20px;">
+                            <i class="fas fa-check"></i> <strong>🧪 TEST BUTTON - Click Me!</strong>
                         </button>
-                        <button class="tool-btn" onclick="exportReport('pptx')">
-                            <i class="fas fa-file-powerpoint"></i> Export PPTX
+                        
+                        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 3px solid var(--success-color);">
+                            <p style="margin: 0; font-size: 13px; color: var(--text-secondary);">
+                                <i class="fas fa-info-circle" style="color: var(--success-color);"></i>
+                                <strong>How to export:</strong><br>
+                                1. Add content blocks to your report<br>
+                                2. Click one of the buttons below<br>
+                                3. Your file will download automatically
+                            </p>
+                        </div>
+                        <button class="tool-btn export-btn" onclick="console.log('PDF button clicked'); exportReport('pdf');" title="Export your report as a PDF document">
+                            <i class="fas fa-file-pdf"></i> <strong>Export as PDF</strong>
                         </button>
-                        <button class="tool-btn" onclick="exportReport('png')">
-                            <i class="fas fa-file-image"></i> Export Image
+                        <button class="tool-btn export-btn" onclick="console.log('PPTX button clicked'); exportReport('pptx');" title="Export your report as a PowerPoint presentation">
+                            <i class="fas fa-file-powerpoint"></i> <strong>Export as PPTX</strong>
+                        </button>
+                        <button class="tool-btn export-btn" onclick="console.log('PNG button clicked'); exportReport('png');" title="Export your report as an image">
+                            <i class="fas fa-file-image"></i> <strong>Export as Image</strong>
                         </button>
                         <button class="tool-btn" onclick="saveReportState()">
                             <i class="fas fa-save"></i> Save State
@@ -1014,16 +1044,60 @@
     </div>
 
     <script>
+        console.log('🚀 Script loaded - starting initialization...');
+        
         let quill; // Quill editor instance
         let actionHistory = []; // For undo functionality
-        let currentBlocks = {{ blocks|safe }};
+        let currentBlocks = [];
+        
+        // Safely parse blocks from Django template
+        try {
+            currentBlocks = {{ blocks|safe }};
+            console.log('✅ Loaded', currentBlocks.length, 'blocks from server');
+        } catch(e) {
+            console.error('❌ Failed to parse blocks:', e);
+            currentBlocks = [];
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
-            initializeSortable();
-            initializeQuill();
-            saveCurrentState();
-            initializeSidebarTabs();
-            initializeSidebarToggle();
+            console.log('📄 DOM Content Loaded - initializing components...');
+            
+            try {
+                initializeSortable();
+                console.log('✅ Sortable initialized');
+            } catch(e) {
+                console.error('❌ Sortable init failed:', e);
+            }
+            
+            try {
+                initializeQuill();
+                console.log('✅ Quill initialized');
+            } catch(e) {
+                console.error('❌ Quill init failed:', e);
+            }
+            
+            try {
+                saveCurrentState();
+                console.log('✅ State saved');
+            } catch(e) {
+                console.error('❌ State save failed:', e);
+            }
+            
+            try {
+                initializeSidebarTabs();
+                console.log('✅ Sidebar tabs initialized');
+            } catch(e) {
+                console.error('❌ Sidebar tabs init failed:', e);
+            }
+            
+            try {
+                initializeSidebarToggle();
+                console.log('✅ Sidebar toggle initialized');
+            } catch(e) {
+                console.error('❌ Sidebar toggle init failed:', e);
+            }
+            
+            console.log('✨ All initialization complete!');
         });
 
         function initializeSidebarTabs() {
@@ -1913,18 +1987,22 @@
             const blocks = collectAllBlocks();
             
             if (blocks.length === 0) {
-                showNotification('No content to export. Add some blocks to your report first.', 'warning');
+                showNotification('⚠️ No content to export! Please add some blocks to your report first.', 'warning');
                 return;
             }
             
-            console.log(`Exporting ${blocks.length} blocks as ${format}`);
+            console.log(`📤 Exporting ${blocks.length} blocks as ${format}`);
             console.log('Detailed blocks data:', JSON.stringify(blocks, null, 2));
             
-            // Show loading state
-            const btn = event.target;
+            // Show prominent loading state
+            const btn = event.target.closest('button');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating ' + format.toUpperCase() + '...';
             btn.disabled = true;
+            btn.style.opacity = '0.7';
+            
+            // Show notification that process started
+            showNotification(`🔄 Generating your ${format.toUpperCase()} report... Please wait.`, 'info');
             
             // First save the blocks to session, then generate export
             fetch('/save_report_blocks/', {
@@ -1935,10 +2013,13 @@
                 },
                 body: JSON.stringify({ blocks: blocks })
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log('📝 Save blocks response status:', response.status);
+                return response.json();
+            })
             .then(data => {
                 if (data.status === 'success') {
-                    console.log('Blocks saved to session successfully');
+                    console.log('✅ Blocks saved to session successfully');
                     // Now generate the export
                     return fetch(`/save_report/${format}/`, {
                         method: 'POST',
@@ -1953,41 +2034,44 @@
                         })
                     });
                 } else {
-                    throw new Error('Failed to save blocks to session');
+                    throw new Error('❌ Failed to save blocks to session: ' + (data.message || 'Unknown error'));
                 }
             })
             .then(response => {
-                console.log('Export response status:', response.status);
+                console.log('📥 Export response status:', response.status, response.statusText);
                 if (response.ok) {
+                    console.log('✅ Export successful, downloading file...');
                     return response.blob();
                 } else {
                     return response.text().then(text => {
-                        console.error('Export error response:', text);
-                        throw new Error(`Export failed: ${response.status} - ${text}`);
+                        console.error('❌ Export error response:', text);
+                        throw new Error(`Export failed with status ${response.status}: ${text}`);
                     });
                 }
             })
             .then(blob => {
+                console.log('💾 Creating download link for blob size:', blob.size, 'bytes');
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `data_analysis_report.${format}`;
+                a.download = `data_analysis_report_${new Date().getTime()}.${format}`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 a.remove();
                 
                 // Success notification
-                showNotification(`Report exported successfully as ${format.toUpperCase()}!`, 'success');
+                showNotification(`✅ Report exported successfully as ${format.toUpperCase()}! Check your downloads folder.`, 'success');
             })
             .catch(err => {
-                console.error('Export failed:', err);
-                showNotification(`Export failed: ${err.message}`, 'error');
+                console.error('❌ Export failed:', err);
+                showNotification(`❌ Export failed: ${err.message}. Please check the console for details.`, 'error');
             })
             .finally(() => {
                 // Restore button state
                 btn.innerHTML = originalText;
                 btn.disabled = false;
+                btn.style.opacity = '1';
             });
         }
 
