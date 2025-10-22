@@ -417,6 +417,187 @@ def analyze_dataset_context(df):
         }
 
 
+def generate_curious_insights(df):
+    """
+    The Curiosity Engine: Automatically analyzes a DataFrame to discover interesting patterns
+    and generates fascinating, ready-to-ask questions for the user.
+    
+    Args:
+        df: pandas DataFrame to analyze
+        
+    Returns:
+        list: A list of 3-5 fascinating, insight-driven questions
+    """
+    try:
+        print(f"🔍 Curiosity Engine: Starting analysis of dataset with {df.shape[0]} rows and {df.shape[1]} columns")
+        
+        # === AUTOMATED EDA ===
+        findings = []
+        
+        # 1. Statistical Summary
+        print("📊 Generating statistical summary...")
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        if numeric_cols:
+            stats_summary = df[numeric_cols].describe()
+            findings.append(f"Statistical Summary: Dataset has {len(numeric_cols)} numeric columns. ")
+            findings.append(f"Key statistics - Mean values range from {stats_summary.loc['mean'].min():.2f} to {stats_summary.loc['mean'].max():.2f}. ")
+            findings.append(f"Standard deviations range from {stats_summary.loc['std'].min():.2f} to {stats_summary.loc['std'].max():.2f}. ")
+        
+        # 2. Top Correlations
+        print("🔗 Finding correlations...")
+        if len(numeric_cols) >= 2:
+            corr_matrix = df[numeric_cols].corr()
+            # Get upper triangle of correlation matrix
+            upper_triangle = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            corr_pairs = corr_matrix.where(upper_triangle).stack().sort_values(ascending=False)
+            
+            # Top 5 positive correlations
+            top_positive = corr_pairs.head(5)
+            if len(top_positive) > 0:
+                findings.append(f"\nSTRONG POSITIVE CORRELATIONS: ")
+                for (col1, col2), corr_val in top_positive.items():
+                    if abs(corr_val) > 0.3:  # Only report meaningful correlations
+                        findings.append(f"- {col1} and {col2} have a correlation of {corr_val:.2f}. ")
+            
+            # Top 5 negative correlations
+            top_negative = corr_pairs.tail(5)
+            if len(top_negative) > 0:
+                findings.append(f"\nSTRONG NEGATIVE CORRELATIONS: ")
+                for (col1, col2), corr_val in top_negative.items():
+                    if abs(corr_val) > 0.3:
+                        findings.append(f"- {col1} and {col2} have a negative correlation of {corr_val:.2f}. ")
+        
+        # 3. Categorical Distribution Skew
+        print("📈 Analyzing categorical distributions...")
+        if categorical_cols:
+            findings.append(f"\nCATEGORICAL PATTERNS: ")
+            for col in categorical_cols[:5]:  # Limit to first 5 categorical columns
+                value_counts = df[col].value_counts(normalize=True)
+                if len(value_counts) > 0:
+                    top_percentage = value_counts.iloc[0] * 100
+                    if top_percentage > 80:
+                        findings.append(f"- Column '{col}' is heavily skewed: '{value_counts.index[0]}' represents {top_percentage:.1f}% of all values. ")
+                    elif len(value_counts) > 5:
+                        findings.append(f"- Column '{col}' has {len(value_counts)} unique values, with top value '{value_counts.index[0]}' at {top_percentage:.1f}%. ")
+        
+        # 4. Outlier Detection using IQR
+        print("🎯 Detecting outliers...")
+        if numeric_cols:
+            findings.append(f"\nOUTLIER DETECTION: ")
+            for col in numeric_cols[:5]:  # Check first 5 numeric columns
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+                
+                if len(outliers) > 0:
+                    outlier_percentage = (len(outliers) / len(df)) * 100
+                    findings.append(f"- Column '{col}' has {len(outliers)} outliers ({outlier_percentage:.1f}% of data), "
+                                  f"ranging from {outliers[col].min():.2f} to {outliers[col].max():.2f}. ")
+        
+        # 5. Time-Series Patterns (Bonus)
+        print("⏰ Checking for time-series patterns...")
+        datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+        
+        # Also check for columns that might be dates but stored as strings
+        for col in categorical_cols[:10]:
+            if any(keyword in col.lower() for keyword in ['date', 'time', 'year', 'month', 'day']):
+                try:
+                    pd.to_datetime(df[col].head(10), errors='raise')
+                    datetime_cols.append(col)
+                except:
+                    pass
+        
+        if datetime_cols:
+            findings.append(f"\nTIME-SERIES PATTERNS: ")
+            for col in datetime_cols[:3]:
+                try:
+                    date_col = pd.to_datetime(df[col]) if df[col].dtype == 'object' else df[col]
+                    date_range = (date_col.max() - date_col.min()).days
+                    findings.append(f"- Column '{col}' spans {date_range} days, from {date_col.min()} to {date_col.max()}. ")
+                except:
+                    pass
+        
+        # Consolidate findings into comprehensive summary
+        statistical_summary = "".join(findings)
+        print(f"✅ Statistical analysis complete. Summary length: {len(statistical_summary)} characters")
+        
+        # === GENERATE CURIOUS QUESTIONS ===
+        print("🤖 Calling Groq API to generate fascinating questions...")
+        
+        prompt = f"""You are a world-class data detective and business intelligence expert. I have performed an automated analysis of a dataset and here are the raw statistical findings:
+
+{statistical_summary}
+
+Your task is to ignore the obvious and find the hidden stories in this data. Transform these dry statistics into 3-5 genuinely fascinating, insightful, and thought-provoking questions that would expose the most valuable secrets and actionable insights in this data.
+
+Frame these questions as if you are presenting them to a CEO or decision-maker who wants to understand the "so what?" behind the numbers.
+
+IMPORTANT RULES:
+1. Make questions specific using the actual column names and values from the data
+2. Focus on business impact, causality, and actionable insights - not just descriptions
+3. Instead of "Column X has high correlation with Y", ask "Could improving X actually boost Y? What's the business case?"
+4. Look for surprises, anomalies, and counter-intuitive patterns
+5. Each question should spark curiosity and lead to a meaningful SQL query
+
+Return EXACTLY 3-5 questions, each on a new line, starting with a number. Make them fascinating!
+
+Example format:
+1. I've noticed that [specific pattern]. Could this mean [business insight]? Should we investigate [specific action]?
+2. The data shows [surprising finding]. What if we [strategic question]?
+3. [Column] seems to [pattern]. Is there a hidden opportunity in [specific area]?"""
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,  # Higher temperature for more creative questions
+            max_tokens=800
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        print(f"🎯 Received response from Groq API")
+        
+        # Parse the questions from the response
+        questions = []
+        lines = response_text.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            # Match lines starting with numbers (1., 2., etc.)
+            if line and (line[0].isdigit() or line.startswith('-') or line.startswith('•')):
+                # Remove numbering and clean up
+                question = line.split('.', 1)[-1].strip() if '.' in line else line[1:].strip()
+                if question and len(question) > 20:  # Ensure it's a substantial question
+                    questions.append(question)
+        
+        # If parsing failed, try to split by double newlines or return raw lines
+        if len(questions) == 0:
+            questions = [q.strip() for q in response_text.split('\n\n') if q.strip() and len(q.strip()) > 20][:5]
+        
+        print(f"✅ Generated {len(questions)} curious questions")
+        for i, q in enumerate(questions, 1):
+            print(f"   {i}. {q[:100]}...")
+        
+        return questions[:5]  # Return maximum 5 questions
+        
+    except Exception as e:
+        print(f"❌ Error in Curiosity Engine: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return fallback questions if analysis fails
+        return [
+            "What are the key trends and patterns in this dataset?",
+            "Which factors have the strongest relationships with each other?",
+            "Are there any unusual outliers or anomalies worth investigating?",
+            "What insights could help drive better business decisions?"
+        ]
+
+
 def auto_visualize_dataset(request):
     """Generate automatic visualizations for the dataset and save each to session"""
     if request.method == 'POST':
@@ -745,6 +926,11 @@ def dataset_preview(request, dataset_name):
         # Analyze dataset context and provide suggestions
         analysis = analyze_dataset_context(df)
         
+        # 🔍 CURIOSITY ENGINE: Generate fascinating, auto-discovered questions
+        print("🚀 Activating Curiosity Engine...")
+        curious_questions = generate_curious_insights(df)
+        print(f"✨ Curiosity Engine generated {len(curious_questions)} questions")
+        
         # Save dataset schema to session for report builder
         save_dataset_schema(request, display_name, data_profile)
 
@@ -752,6 +938,7 @@ def dataset_preview(request, dataset_name):
         df = pd.DataFrame()
         analysis = None
         data_profile = None
+        curious_questions = []
         print(f"❌ Failed to load dataset from Supabase: {e}")  # DEBUG
         messages.error(
             request,
@@ -768,6 +955,7 @@ def dataset_preview(request, dataset_name):
         "preview_rows": df.head(5).values.tolist() if not df.empty else [],
         "analysis": analysis,
         "data_profile": data_profile,
+        "curious_questions": curious_questions,  # 🔍 Curiosity Engine questions
     }
 
     return render(request, "dataset_preview.html", context)

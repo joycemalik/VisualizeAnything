@@ -826,7 +826,7 @@
       color: var(--btn-primary);
       border: 2px solid var(--btn-primary);
       border-radius: 0px;
-      padding: 0px 16px;
+      padding: 8px 14px;
       cursor: pointer;
       font-size: 16px;
       transition: all 0.2s ease;
@@ -838,12 +838,35 @@
 
     .voice-btn:hover {
       background: var(--btn-primary);
-      color: white;
       transform: scale(1.05);
+    }
+
+    .voice-btn .voice-icon {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+      pointer-events: none;
+      filter: brightness(0) saturate(100%) invert(42%) sepia(93%) saturate(1352%) hue-rotate(229deg) brightness(98%) contrast(98%);
+      transition: filter 0.2s ease;
+    }
+
+    .voice-btn:hover .voice-icon {
+      filter: brightness(0) saturate(100%) invert(100%) sepia(0%) saturate(7500%) hue-rotate(324deg) brightness(104%) contrast(104%);
     }
 
     .voice-btn i {
       pointer-events: none;
+    }
+
+    /* Curiosity Engine Question Buttons */
+    .curious-question-btn:hover {
+      background: rgba(255, 255, 255, 1) !important;
+      transform: translateX(4px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    }
+
+    .curious-question-btn:active {
+      transform: translateX(2px) scale(0.98);
     }
 
     /* Chart styles */
@@ -1451,6 +1474,31 @@
               </ul>
               {% endif %}
               
+              {% if curious_questions %}
+              <br>
+              <div style="background: var(--bg-secondary); padding: 16px; border-radius: 0px; margin: 12px 0; border-left: 3px solid var(--btn-primary);">
+                <strong style="color: var(--text-primary); font-size: 14px;">🔍 Discovered Insights</strong>
+                <p style="color: var(--text-secondary); font-size: 13px; margin: 8px 0 12px 0; line-height: 1.5;">
+                  I've analyzed your data and found some interesting patterns. Try asking:
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  {% for question in curious_questions %}
+                  <button 
+                    class="curious-question-btn" 
+                    onclick="askCuriousQuestion(this)"
+                    data-question="{{ question }}"
+                    style="background: var(--bg-tertiary); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 0px; text-align: left; cursor: pointer; transition: all 0.2s ease; color: var(--text-primary); font-size: 13px; line-height: 1.5;">
+                    <span style="color: var(--btn-primary); font-weight: 600; margin-right: 6px;">•</span>
+                    {{ question }}
+                  </button>
+                  {% endfor %}
+                </div>
+                <p style="color: var(--text-muted); font-size: 12px; margin: 10px 0 0 0;">
+                  Click any question to populate the input field
+                </p>
+              </div>
+              {% endif %}
+              
               <br>
               <strong>Quick Start:</strong> Try the schema-aware query chips in the sidebar, or ask me:
               <ul style="margin: 8px 0; padding-left: 20px;">
@@ -1482,7 +1530,7 @@
               rows="1"
             ></textarea>
             <button class="voice-btn" id="voiceBtn" title="Voice input (Coming soon)" onclick="alert('🎤 Voice feature coming soon!')">
-              <i class="fas fa-microphone"></i>
+              <img src=studio\static\5569.jpg  alt="microphone" class="voice-icon">
             </button>
             <button class="send-btn" id="sendBtn" onclick="sendQuery()">Send</button>
           </div>
@@ -1943,6 +1991,32 @@ function appendMessage(content, sender = "bot") {
   
   container.appendChild(messageDiv);
   container.scrollTop = container.scrollHeight;
+}
+
+// Handle Curiosity Engine question clicks
+function askCuriousQuestion(button) {
+  const question = button.getAttribute('data-question');
+  const input = document.getElementById("queryInput");
+  
+  // Populate the input field with the question
+  input.value = question;
+  
+  // Auto-resize textarea
+  input.style.height = 'auto';
+  input.style.height = input.scrollHeight + 'px';
+  
+  // Focus on the input
+  input.focus();
+  
+  // Optionally, auto-send the query
+  // Uncomment the line below if you want questions to auto-send
+  // sendQuery();
+  
+  // Visual feedback
+  button.style.background = 'rgba(245, 158, 11, 0.2)';
+  setTimeout(() => {
+    button.style.background = 'rgba(255, 255, 255, 0.95)';
+  }, 300);
 }
 
 async function sendQuery() {
