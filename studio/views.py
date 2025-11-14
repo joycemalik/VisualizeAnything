@@ -22,6 +22,7 @@ import io
 from supabase import create_client
 import base64
 from io import BytesIO
+import requests
 
 
 # Load environment variables
@@ -56,7 +57,13 @@ def cleanup_session_data_from_supabase(session):
                 filename = dataset_path.split('/')[-1]
                 session_files.append(f"sessions/{filename}")
         
-        # Also check for any session-specific uploaded files
+        # Check for multi-dataset array
+        if 'datasets' in session:
+            for dataset_info in session['datasets']:
+                if isinstance(dataset_info, dict) and 'supabase_path' in dataset_info:
+                    session_files.append(dataset_info['supabase_path'])
+        
+        # Also check for any session-specific uploaded files (legacy)
         if 'uploaded_files' in session:
             for file_info in session['uploaded_files']:
                 if isinstance(file_info, dict) and 'supabase_path' in file_info:
@@ -89,7 +96,8 @@ def complete_session_cleanup(session):
             'chat_history', 'visualizations', 'tables', 'report_blocks', 
             'query_results', 'current_dataset_path', 'uploaded_files',
             'dataset_info', 'analysis_results', 'generated_charts',
-            'ai_responses', 'user_queries', 'session_start_time'
+            'ai_responses', 'user_queries', 'session_start_time',
+            'datasets', 'active_dataset_index'  # Multi-dataset keys
         ]
         
         cleared_count = 0
@@ -143,77 +151,617 @@ def index(request):
     return render(request, "index.html", {"datasets": []})
 
 
+def search_online_datasets(request):
+    """AI-powered dataset search engine"""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+    try:
+        data = json.loads(request.body)
+        search_query = data.get('query', '').strip()
+        
+        if not search_query:
+            return JsonResponse({'status': 'error', 'message': 'Please enter a search query'})
+        
+        print(f"🔍 Searching for datasets: {search_query}")
+        
+        # Use AI to find relevant datasets
+        prompt = f"""You are a dataset search engine. Find relevant CSV datasets for this query: "{search_query}"
+
+Generate 5-8 dataset suggestions using ONLY these verified sources:
+
+VERIFIED SOURCES:
+1. https://raw.githubusercontent.com/mwaskom/seaborn-data/master/[filename].csv
+   - Available: iris.csv, titanic.csv, tips.csv, planets.csv, diamonds.csv, flights.csv, penguins.csv
+
+2. https://raw.githubusercontent.com/datasciencedojo/datasets/master/[filename].csv
+   - Available: titanic.csv, iris.csv, Admission_Predict.csv, Mall_Customers.csv
+
+3. https://people.sc.fsu.edu/~jburkardt/data/csv/[filename].csv
+   - Available: airtravel.csv, biostats.csv, cities.csv, deniro.csv, hw_200.csv, zillow.csv
+
+4. https://raw.githubusercontent.com/plotly/datasets/master/[filename].csv
+   - Available: iris.csv, wind_data.csv, 2011_us_ag_exports.csv, volcano.csv
+
+INSTRUCTIONS:
+- Use ONLY URLs from the verified sources above
+- Match the search query to the most relevant available datasets
+- Provide accurate descriptions based on well-known datasets
+- If no exact match, suggest similar datasets from the list
+
+Return ONLY a JSON array (no markdown, no explanation):
+[
+  {{
+    "name": "Dataset Name",
+    "description": "What the dataset contains",
+    "category": "Category",
+    "rows": "estimated number",
+    "columns": estimated_number,
+    "url": "https://raw.githubusercontent.com/..."
+  }}
+]"""
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1500
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        
+        # Extract JSON from response (handle markdown code blocks)
+        if '```json' in response_text:
+            response_text = response_text.split('```json')[1].split('```')[0].strip()
+        elif '```' in response_text:
+            response_text = response_text.split('```')[1].split('```')[0].strip()
+        
+        # Parse the JSON
+        datasets = json.loads(response_text)
+        
+        # Add IDs
+        for i, ds in enumerate(datasets):
+            ds['id'] = f"ai_dataset_{i}_{int(time.time())}"
+            if 'size' not in ds:
+                ds['size'] = 'Unknown'
+        
+        print(f"✅ Found {len(datasets)} datasets for: {search_query}")
+        
+        return JsonResponse({
+            'status': 'success',
+            'datasets': datasets,
+            'query': search_query
+        })
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        print(f"Response was: {response_text}")
+        return JsonResponse({'status': 'error', 'message': 'Failed to parse AI response'})
+    except Exception as e:
+        print(f"❌ Dataset search error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+def fetch_online_dataset(request):
+    """Fetch an online dataset and save it to session"""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+    try:
+        import requests
+        data = json.loads(request.body)
+        dataset_id = data.get('dataset_id')
+        dataset_url = data.get('url')
+        dataset_name = data.get('name', 'Online Dataset')
+        
+        if not dataset_url:
+            return JsonResponse({'status': 'error', 'message': 'Dataset URL is required'})
+        
+        print(f"🌐 Fetching online dataset: {dataset_name}")
+        print(f"📍 URL: {dataset_url}")
+        
+        # Fetch the dataset from URL with headers to avoid blocks
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/csv,text/plain,application/csv,*/*'
+        }
+        
+        response = requests.get(dataset_url, timeout=30, headers=headers, allow_redirects=True)
+        response.raise_for_status()
+        
+        # Verify it's CSV data
+        content = response.content
+        if len(content) < 10:
+            return JsonResponse({'status': 'error', 'message': 'Dataset appears to be empty'})
+        
+        # Try to parse as CSV to validate
+        try:
+            test_df = pd.read_csv(io.BytesIO(content))
+            if test_df.empty:
+                return JsonResponse({'status': 'error', 'message': 'Dataset is empty'})
+            print(f"✅ Validated CSV: {test_df.shape[0]} rows, {test_df.shape[1]} columns")
+        except Exception as e:
+            print(f"⚠️ CSV validation warning: {e}")
+            # Try to continue anyway
+        
+        # Save to Supabase
+        clear_session_data(request)
+        
+        session_key = request.session.session_key or str(int(time.time()))
+        timestamp = int(time.time() * 1000)  # Use milliseconds for consistency
+        
+        # Clean filename
+        safe_name = dataset_name.replace(' ', '_').replace('/', '_')[:50]
+        stored_name = f"{session_key}_{timestamp}_{safe_name}.csv"
+        path_in_bucket = f"sessions/{stored_name}"
+        
+        # Upload to Supabase
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            path_in_bucket,
+            content,
+            {"cacheControl": "3600"}
+        )
+        
+        print(f"✅ Uploaded online dataset to Supabase: {path_in_bucket}")
+        
+        # Store in session
+        request.session['datasets'] = [{
+            'supabase_path': path_in_bucket,
+            'stored_name': stored_name,
+            'display_name': dataset_name if dataset_name.endswith('.csv') else f"{dataset_name}.csv",
+            'upload_time': timestamp,
+            'size': len(content),
+            'is_online': True,
+            'source_url': dataset_url
+        }]
+        request.session['active_dataset_index'] = 0
+        request.session['current_dataset_path'] = path_in_bucket
+        request.session['uploaded_files'] = request.session['datasets']
+        request.session.modified = True
+        
+        messages.success(request, f"Successfully loaded online dataset: {dataset_name}")
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Loaded {dataset_name}',
+            'redirect_url': reverse("multi_dataset_preview")
+        })
+        
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout fetching dataset")
+        return JsonResponse({'status': 'error', 'message': 'Request timeout - dataset may be too large or server slow'})
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to fetch online dataset: {e}")
+        return JsonResponse({'status': 'error', 'message': f'Failed to download: {str(e)}'})
+    except Exception as e:
+        print(f"❌ Error fetching online dataset: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': f'Error: {str(e)}'})
+
+
 def dataset_list(request):
     return render(request, "datasets.html", {"datasets": []})
 
 
 def upload_dataset(request):
+    """Legacy single file upload - redirects to multi-upload"""
     if request.method == "POST" and request.FILES.get("file"):
         file = request.FILES["file"]
+        request.FILES.setlist('files', [file])
+        return upload_multiple_datasets(request)
+    return redirect("index")
 
+
+def upload_multiple_datasets(request):
+    """Handle multiple dataset uploads"""
+    if request.method == "POST":
+        files = request.FILES.getlist("files")
+        
+        if not files:
+            return JsonResponse({'status': 'error', 'message': 'No files provided'})
+        
+        # Ensure session exists
+        if not request.session.session_key:
+            request.session.create()
+        
+        session_key = request.session.session_key
+        print(f"📝 Session key: {session_key}")
+        
         # Clear previous session data for clean slate
         clear_session_data(request)
-
-        # Create a unique filename for Supabase (stored name)
-        session_key = request.session.session_key or str(int(time.time()))
-        timestamp = int(time.time())
-        stored_name = f"{session_key}_{timestamp}_{file.name}"
-        path_in_bucket = f"sessions/{stored_name}"
-
-        # Keep original name for UI
-        display_name = file.name  
-
-        print(f"DEBUG: Uploading file: {stored_name}")
-
-        try:
-            # Read file data as bytes
-            data = file.read()
-
-            # Delete if already exists in Supabase
-            existing_files = supabase.storage.from_(SUPABASE_BUCKET).list("sessions/")
-            existing_names = [f["name"] for f in existing_files]
-            if path_in_bucket in existing_names:
-                supabase.storage.from_(SUPABASE_BUCKET).remove([path_in_bucket])
-                print(f"⚠️ Removed existing file before upload: {path_in_bucket}")
-
-            # Upload to Supabase
-            supabase.storage.from_(SUPABASE_BUCKET).upload(
-                path_in_bucket,
-                data,
-                {"cacheControl": "3600"}
-            )
-            print(f"✅ Uploaded to Supabase: {path_in_bucket}")
-
-            # Store both in session for cleanup tracking
-            TEMP_FILES[request.session.session_key] = path_in_bucket
-            request.session["dataset_path"] = path_in_bucket
-            request.session["dataset_display_name"] = display_name
-            request.session["current_dataset_path"] = path_in_bucket  # For cleanup
-            
-            # Track uploaded files for session cleanup
-            if 'uploaded_files' not in request.session:
-                request.session['uploaded_files'] = []
-            
-            # Add file info for cleanup tracking
-            file_info = {
-                'supabase_path': path_in_bucket,
-                'display_name': display_name,
-                'upload_time': timestamp
-            }
-            request.session['uploaded_files'].append(file_info)
-            request.session.modified = True  
-
-            messages.success(request, f"File uploaded successfully: {display_name}")
-
-            # Redirect using stored name (backend ID), but keep display_name in session
-            return redirect(reverse("dataset_preview", args=[stored_name]))
-
-        except Exception as e:
-            print(f"❌ Failed to upload to Supabase: {e}")
-            messages.error(request, f"Failed to upload: {str(e)}")
-            return redirect("index")
-
+        
+        # Initialize session storage for multiple datasets
+        request.session['datasets'] = []
+        request.session['active_dataset_index'] = 0
+        request.session['uploaded_files'] = []
+        uploaded_datasets = []
+        
+        for file in files:
+            try:
+                timestamp = int(time.time() * 1000)  # Use milliseconds for uniqueness
+                stored_name = f"{session_key}_{timestamp}_{file.name}"
+                path_in_bucket = f"sessions/{stored_name}"
+                display_name = file.name
+                
+                print(f"DEBUG: Uploading file: {stored_name}")
+                
+                # Read file data
+                data = file.read()
+                
+                # Upload to Supabase (with upsert to handle duplicates)
+                try:
+                    supabase.storage.from_(SUPABASE_BUCKET).upload(
+                        path_in_bucket,
+                        data,
+                        {"cacheControl": "3600", "upsert": "true"}
+                    )
+                    print(f"✅ Uploaded to Supabase: {path_in_bucket}")
+                except Exception as upload_err:
+                    # If upload fails, try to remove and re-upload
+                    print(f"⚠️ Upload conflict, attempting to replace: {upload_err}")
+                    try:
+                        supabase.storage.from_(SUPABASE_BUCKET).remove([path_in_bucket])
+                        supabase.storage.from_(SUPABASE_BUCKET).upload(
+                            path_in_bucket,
+                            data,
+                            {"cacheControl": "3600"}
+                        )
+                        print(f"✅ Re-uploaded to Supabase: {path_in_bucket}")
+                    except Exception as retry_err:
+                        print(f"❌ Failed to upload after retry: {retry_err}")
+                        raise
+                
+                # Store dataset info
+                dataset_info = {
+                    'supabase_path': path_in_bucket,
+                    'stored_name': stored_name,
+                    'display_name': display_name,
+                    'upload_time': timestamp,
+                    'size': len(data)
+                }
+                
+                uploaded_datasets.append(dataset_info)
+                print(f"   ✅ Added to uploaded_datasets: {display_name}")
+                
+                # Small delay to ensure unique timestamps
+                time.sleep(0.01)
+                
+            except Exception as e:
+                print(f"❌ Failed to upload {file.name}: {e}")
+                # Continue with other files
+                continue
+        
+        if not uploaded_datasets:
+            return JsonResponse({'status': 'error', 'message': 'All uploads failed'})
+        
+        # Store all datasets in session
+        request.session['datasets'] = uploaded_datasets
+        request.session['uploaded_files'] = uploaded_datasets  # Keep in sync
+        request.session['current_dataset_path'] = uploaded_datasets[0]['supabase_path']
+        request.session['active_dataset_index'] = 0
+        request.session.modified = True
+        
+        print(f"\n📦 Session state after upload:")
+        print(f"   Total datasets: {len(uploaded_datasets)}")
+        print(f"   Active index: 0")
+        print(f"   Datasets: {[d['display_name'] for d in uploaded_datasets]}")
+        
+        messages.success(request, f"Successfully uploaded {len(uploaded_datasets)} dataset(s)")
+        
+        # Return JSON response for AJAX or redirect for form submission
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.content_type == 'multipart/form-data':
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Uploaded {len(uploaded_datasets)} files',
+                'redirect_url': reverse("multi_dataset_preview"),
+                'datasets': uploaded_datasets
+            })
+        else:
+            return redirect("multi_dataset_preview")
+    
     return redirect("index")
+
+
+def multi_dataset_preview(request):
+    """Preview and manage multiple datasets with tabs"""
+    datasets_info = request.session.get('datasets', [])
+    
+    if not datasets_info:
+        messages.error(request, "No datasets in session.")
+        return redirect("index")
+    
+    active_index = request.session.get('active_dataset_index', 0)
+    
+    # Load all datasets from Supabase
+    loaded_datasets = []
+    for idx, dataset_info in enumerate(datasets_info):
+        try:
+            print(f"🔍 DEBUG: Loading dataset {idx}: {dataset_info['display_name']}")
+            print(f"   Path: {dataset_info['supabase_path']}")
+            
+            res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_info['supabase_path'])
+            
+            print(f"   Response type: {type(res)}, size: {len(res) if res else 0}")
+            
+            df = pd.read_csv(io.BytesIO(res))
+            
+            # Generate profile for each dataset with JSON-safe data
+            profile = {
+                'index': idx,
+                'display_name': dataset_info['display_name'],
+                'stored_name': dataset_info['stored_name'],
+                'shape': list(df.shape),  # Convert tuple to list
+                'columns': df.columns.tolist(),
+                'preview_rows': sanitize_for_json(df.head(5).values.tolist()),
+                'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+                'is_active': idx == active_index
+            }
+            
+            loaded_datasets.append(profile)
+            print(f"   ✅ Successfully loaded: {df.shape}")
+            
+        except Exception as e:
+            print(f"❌ Failed to load dataset {dataset_info['display_name']}: {e}")
+            print(f"   Dataset info: {dataset_info}")
+            
+            # Try to list available files to help debug
+            try:
+                all_files = supabase.storage.from_(SUPABASE_BUCKET).list('sessions/')
+                available_files = [f['name'] for f in all_files if f.get('name')]
+                print(f"   Available files in sessions/: {available_files}")
+                
+                # Check if a similar file exists (with different timestamp)
+                expected_basename = dataset_info['display_name']
+                similar_files = [f for f in available_files if expected_basename in f]
+                if similar_files:
+                    print(f"   💡 Similar files found: {similar_files}")
+                    print(f"   💡 TIP: Your session data is outdated. Please re-upload your files or clear session.")
+            except Exception as list_err:
+                print(f"   Could not list files: {list_err}")
+            
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    if not loaded_datasets:
+        messages.error(request, "Failed to load datasets.")
+        return redirect("index")
+    
+    # Generate insights for active dataset only
+    try:
+        active_dataset_info = datasets_info[active_index]
+        res = supabase.storage.from_(SUPABASE_BUCKET).download(active_dataset_info['supabase_path'])
+        active_df = pd.read_csv(io.BytesIO(res))
+        
+        data_profile = generate_data_profile(active_df)
+        analysis = analyze_dataset_context(active_df)
+        curious_questions = generate_curious_insights(active_df)
+        
+    except Exception as e:
+        print(f"❌ Failed to analyze active dataset: {e}")
+        data_profile = None
+        analysis = None
+        curious_questions = []
+    
+    context = {
+        'datasets': loaded_datasets,
+        'active_dataset': loaded_datasets[active_index] if loaded_datasets else None,
+        'data_profile': data_profile,
+        'analysis': analysis,
+        'curious_questions': curious_questions,
+        'can_merge': len(loaded_datasets) > 1
+    }
+    
+    return render(request, "multi_dataset_preview.html", context)
+
+
+def switch_dataset(request, dataset_index):
+    """Switch active dataset"""
+    datasets_info = request.session.get('datasets', [])
+    
+    print(f"🔄 Switch dataset requested:")
+    print(f"   Requested index: {dataset_index}")
+    print(f"   Total datasets: {len(datasets_info)}")
+    print(f"   Available datasets: {[d['display_name'] for d in datasets_info]}")
+    
+    if 0 <= dataset_index < len(datasets_info):
+        request.session['active_dataset_index'] = dataset_index
+        request.session.modified = True
+        
+        active_dataset = datasets_info[dataset_index]
+        print(f"   ✅ Switched to: {active_dataset['display_name']}")
+        
+        return JsonResponse({
+            'status': 'success', 
+            'active_index': dataset_index,
+            'dataset_name': active_dataset['display_name']
+        })
+    
+    print(f"   ❌ Invalid index")
+    return JsonResponse({'status': 'error', 'message': 'Invalid dataset index'})
+
+
+def merge_datasets(request):
+    """Merge multiple datasets based on user specifications"""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+    try:
+        data = json.loads(request.body)
+        merge_type = data.get('merge_type', 'concat')  # concat, join
+        dataset_indices = data.get('dataset_indices', [])
+        
+        datasets_info = request.session.get('datasets', [])
+        
+        if len(dataset_indices) < 2:
+            return JsonResponse({'status': 'error', 'message': 'Select at least 2 datasets to merge'})
+        
+        # Load selected datasets
+        dfs = []
+        names = []
+        for idx in dataset_indices:
+            if 0 <= idx < len(datasets_info):
+                dataset_info = datasets_info[idx]
+                res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_info['supabase_path'])
+                df = pd.read_csv(io.BytesIO(res))
+                dfs.append(df)
+                names.append(dataset_info['display_name'])
+        
+        if len(dfs) < 2:
+            return JsonResponse({'status': 'error', 'message': 'Failed to load datasets'})
+        
+        # Perform merge based on type
+        if merge_type == 'concat':
+            # Vertical concatenation (stack rows)
+            merged_df = pd.concat(dfs, ignore_index=True)
+            merge_desc = f"Concatenated {len(dfs)} datasets vertically"
+            
+        elif merge_type == 'join':
+            # Horizontal join (need common column)
+            join_column = data.get('join_column')
+            join_type = data.get('join_type', 'inner')  # inner, outer, left, right
+            
+            if not join_column:
+                return JsonResponse({'status': 'error', 'message': 'Join column required for join operation'})
+            
+            merged_df = dfs[0]
+            for i in range(1, len(dfs)):
+                merged_df = merged_df.merge(dfs[i], on=join_column, how=join_type, suffixes=('', f'_{names[i]}'))
+            
+            merge_desc = f"Joined {len(dfs)} datasets on column '{join_column}' using {join_type} join"
+        
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Invalid merge type'})
+        
+        # Save merged dataset to Supabase
+        session_key = request.session.session_key or str(int(time.time()))
+        timestamp = int(time.time() * 1000)  # Use milliseconds for consistency
+        merged_name = f"{session_key}_{timestamp}_merged.csv"
+        path_in_bucket = f"sessions/{merged_name}"
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        merged_df.to_csv(csv_buffer, index=False)
+        csv_data = csv_buffer.getvalue().encode('utf-8')
+        
+        # Upload to Supabase
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            path_in_bucket,
+            csv_data,
+            {"cacheControl": "3600"}
+        )
+        
+        # Add merged dataset to session
+        merged_info = {
+            'supabase_path': path_in_bucket,
+            'stored_name': merged_name,
+            'display_name': f"Merged_{'+'.join(names[:2])}",
+            'upload_time': timestamp,
+            'size': len(csv_data),
+            'is_merged': True
+        }
+        
+        datasets_info.append(merged_info)
+        request.session['datasets'] = datasets_info
+        request.session['active_dataset_index'] = len(datasets_info) - 1
+        request.session['uploaded_files'].append(merged_info)
+        request.session.modified = True
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': merge_desc,
+            'merged_dataset': {
+                'name': merged_info['display_name'],
+                'shape': merged_df.shape,
+                'columns': merged_df.columns.tolist()
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Merge failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
+
+
+def run_multi_dataset_query(request):
+    """Run queries across multiple datasets"""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+    
+    try:
+        data = json.loads(request.body)
+        query = data.get('query', '')
+        dataset_index = data.get('dataset_index')
+        
+        datasets_info = request.session.get('datasets', [])
+        
+        if dataset_index is None:
+            dataset_index = request.session.get('active_dataset_index', 0)
+        
+        if not (0 <= dataset_index < len(datasets_info)):
+            return JsonResponse({'status': 'error', 'message': 'Invalid dataset'})
+        
+        # Load the selected dataset
+        dataset_info = datasets_info[dataset_index]
+        print(f"🔍 QUERY DEBUG: Loading dataset {dataset_index}: {dataset_info['display_name']}")
+        print(f"   Path: {dataset_info['supabase_path']}")
+        
+        res = supabase.storage.from_(SUPABASE_BUCKET).download(dataset_info['supabase_path'])
+        print(f"   Downloaded {len(res)} bytes")
+        
+        df = pd.read_csv(io.BytesIO(res))
+        print(f"   Loaded dataframe: {df.shape}")
+        
+        # Get column info
+        columns = [{'name': col, 'type': str(df[col].dtype)} for col in df.columns]
+        
+        # Generate SQL using AI
+        prompt = make_sql_prompt(dataset_info['display_name'], columns, query)
+        
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=500
+        )
+        
+        # Extract SQL from AI response
+        raw_response = response.choices[0].message.content.strip()
+        parsed = extract_top_level_json(raw_response)
+        sql_query = parsed.get("sql", "").strip()
+        
+        if not sql_query:
+            raise ValueError("AI did not return valid SQL query")
+        
+        # Execute query
+        conn = sqlite3.connect(":memory:")
+        df.to_sql(dataset_info['display_name'], conn, index=False, if_exists="replace")
+        
+        result_df = pd.read_sql_query(sql_query, conn)
+        conn.close()
+        
+        # Format response with sanitized data
+        result_data = sanitize_for_json(result_df.to_dict('records'))
+        
+        return JsonResponse({
+            'status': 'success',
+            'query': query,
+            'sql': sql_query,
+            'results': result_data,
+            'columns': result_df.columns.tolist(),
+            'row_count': len(result_df),
+            'dataset_name': dataset_info['display_name']
+        })
+        
+    except Exception as e:
+        print(f"❌ Query failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'status': 'error', 'message': str(e)})
 
 
 
@@ -529,27 +1077,31 @@ def generate_curious_insights(df):
         # === GENERATE CURIOUS QUESTIONS ===
         print("🤖 Calling Groq API to generate fascinating questions...")
         
-        prompt = f"""You are a world-class data detective and business intelligence expert. I have performed an automated analysis of a dataset and here are the raw statistical findings:
+        prompt = f"""You are a world-class data scientist and business intelligence expert. Analyze this dataset summary and generate CONCISE, ACTION-ORIENTED insights.
 
 {statistical_summary}
 
-Your task is to ignore the obvious and find the hidden stories in this data. Transform these dry statistics into 3-5 genuinely fascinating, insightful, and thought-provoking questions that would expose the most valuable secrets and actionable insights in this data.
+Generate 3-5 SHORT, POWERFUL questions that reveal hidden insights. Each question should be:
+- CONCISE (max 15 words)
+- SPECIFIC (use actual column names)
+- ACTIONABLE (lead to SQL queries)
+- IMPACTFUL (business value)
 
-Frame these questions as if you are presenting them to a CEO or decision-maker who wants to understand the "so what?" behind the numbers.
+FORMATTING RULES:
+1. Use **bold** for key metrics/column names
+2. Use specific numbers and percentages
+3. Frame as discovery: "What drives...", "How does...", "Which factors..."
+4. Focus on relationships, trends, and anomalies
+5. NO fluff or unnecessary words
 
-IMPORTANT RULES:
-1. Make questions specific using the actual column names and values from the data
-2. Focus on business impact, causality, and actionable insights - not just descriptions
-3. Instead of "Column X has high correlation with Y", ask "Could improving X actually boost Y? What's the business case?"
-4. Look for surprises, anomalies, and counter-intuitive patterns
-5. Each question should spark curiosity and lead to a meaningful SQL query
+Return EXACTLY 3-5 questions in this format:
+1. What drives **[key column]** performance in **[segment]**?
+2. How does **[column1]** impact **[column2]** (correlation: X.XX)?
+3. Which **[category]** shows the highest **[metric]** growth?
 
-Return EXACTLY 3-5 questions, each on a new line, starting with a number. Make them fascinating!
+PRIORITIZE: Correlations > Outliers > Trends > Distributions
 
-Example format:
-1. I've noticed that [specific pattern]. Could this mean [business insight]? Should we investigate [specific action]?
-2. The data shows [surprising finding]. What if we [strategic question]?
-3. [Column] seems to [pattern]. Is there a hidden opportunity in [specific area]?"""
+Keep questions SHORT, BOLD, and SCANNABLE!"""
 
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -1010,66 +1562,94 @@ def full_dataset(request):
         return JsonResponse({"error": f"Failed to read dataset: {str(e)}"}, status=500)
 
 
+# Helper function to clean data for JSON serialization
+def sanitize_for_json(obj):
+    """Convert numpy/pandas types to JSON-serializable Python types"""
+    import numpy as np
+    
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return [sanitize_for_json(item) for item in obj.tolist()]
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: sanitize_for_json(val) for key, val in obj.items()}
+    elif isinstance(obj, tuple):
+        return tuple(sanitize_for_json(item) for item in obj)
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
+
+
+# Helper functions for SQL query generation
+def make_sql_prompt(dataset_name: str, columns: list[dict], user_input: str) -> str:
+    """Generate prompt for AI to convert natural language to SQL"""
+    obj = {
+        "role": "system",
+        "task": "Translate English to exactly one SQLite SELECT query.",
+        "dialect": "sqlite",
+        "table": {
+            "name": dataset_name,
+            "columns": columns  # [{"name":"col","type":"int64"}, ...]
+        },
+        "rules": [
+            "Respond with JSON ONLY. No prose, no code fences.",
+            "Return exactly one key: sql.",
+            "The value must be exactly one SELECT statement ending with a semicolon.",
+            "Use ONLY the provided table.",
+            f'Always double-quote the table name in FROM: FROM "{dataset_name}".',
+            "Use only columns that exist.",
+            "Do not use JOINs, other tables, PRAGMA, or DDL.",
+            "Numeric literals unquoted; strings single-quoted and escaped.",
+            "No comments, no multiple statements."
+        ],
+        "input": {"english": user_input},
+        "output_schema": {
+            "type": "object",
+            "required": ["sql"],
+            "additionalProperties": False,
+            "properties": {"sql": {"type": "string"}}
+        },
+        "respond_with": "json_only"
+    }
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def extract_top_level_json(text: str) -> dict:
+    """Extract JSON from AI response, handling various formats"""
+    # First try direct parse
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    # Fallback: extract first balanced {...} block
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0 and start != -1:
+                block = text[start:i+1]
+                try:
+                    return json.loads(block)
+                except Exception:
+                    # keep scanning in case there is another block later
+                    start = -1
+    raise ValueError("Model did not return valid JSON.")
+
 
 def run_query(request, dataset_name):
     import re
-
-    def make_sql_prompt(dataset_name: str, columns: list[dict], user_input: str) -> str:
-        # Build a SAFE JSON instruction object
-        obj = {
-            "role": "system",
-            "task": "Translate English to exactly one SQLite SELECT query.",
-            "dialect": "sqlite",
-            "table": {
-                "name": dataset_name,
-                "columns": columns  # [{"name":"col","type":"int64"}, ...]
-            },
-            "rules": [
-                "Respond with JSON ONLY. No prose, no code fences.",
-                "Return exactly one key: sql.",
-                "The value must be exactly one SELECT statement ending with a semicolon.",
-                "Use ONLY the provided table.",
-                f'Always double-quote the table name in FROM: FROM "{dataset_name}".',
-                "Use only columns that exist.",
-                "Do not use JOINs, other tables, PRAGMA, or DDL.",
-                "Numeric literals unquoted; strings single-quoted and escaped.",
-                "No comments, no multiple statements."
-            ],
-            "input": {"english": user_input},
-            "output_schema": {
-                "type": "object",
-                "required": ["sql"],
-                "additionalProperties": False,
-                "properties": {"sql": {"type": "string"}}
-            },
-            "respond_with": "json_only"
-        }
-        return json.dumps(obj, ensure_ascii=False)
-
-    def extract_top_level_json(text: str) -> dict:
-        # First try direct parse
-        try:
-            return json.loads(text)
-        except Exception:
-            pass
-        # Fallback: extract first balanced {...} block
-        depth = 0
-        start = -1
-        for i, ch in enumerate(text):
-            if ch == '{':
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0 and start != -1:
-                    block = text[start:i+1]
-                    try:
-                        return json.loads(block)
-                    except Exception:
-                        # keep scanning in case there is another block later
-                        start = -1
-        raise ValueError("Model did not return valid JSON.")
 
     if request.method != "POST":
         return JsonResponse({"error": "POST request required"}, status=400)
@@ -2286,7 +2866,13 @@ def clear_session_data_endpoint(request):
     """Endpoint to manually clear session data"""
     if request.method == 'POST':
         clear_session_data(request)
-        return JsonResponse({'status': 'success', 'message': 'Session data cleared'})
+        # Also clear dataset-related session keys
+        dataset_keys = ['datasets', 'active_dataset_index', 'uploaded_files', 'current_dataset_path']
+        for key in dataset_keys:
+            if key in request.session:
+                del request.session[key]
+        request.session.modified = True
+        return JsonResponse({'status': 'success', 'message': 'All session data cleared. Please re-upload your files.'})
     return JsonResponse({'status': 'error', 'message': 'POST request required'})
 
 

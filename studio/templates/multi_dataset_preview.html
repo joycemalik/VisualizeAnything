@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Datanaut.ai - {{ dataset.name }}</title>
+  <title>Datanaut.ai - Multi-Dataset Analysis</title>
   <style>
     :root { 
       /* Light theme variables */
@@ -1252,15 +1252,56 @@
     <div class="sidebar-nav" id="sidebarNav">
       <div class="sidebar-header">
         <h1>Datanaut<span style="color: #7c66f8ff;">.ai</span></h1>
+        
+        <!-- Dataset Tabs -->
+        <div style="margin: 12px 0;">
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">DATASETS ({{ datasets|length }})</div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            {% for ds in datasets %}
+            <button 
+              onclick="switchDataset({{ ds.index }})" 
+              class="dataset-tab {% if ds.is_active %}active-dataset{% endif %}"
+              style="background: {% if ds.is_active %}var(--btn-primary){% else %}var(--bg-secondary){% endif %}; 
+                     color: {% if ds.is_active %}white{% else %}var(--text-primary){% endif %}; 
+                     border: 1px solid {% if ds.is_active %}var(--btn-primary){% else %}var(--border-color){% endif %}; 
+                     padding: 10px 12px; 
+                     border-radius: 0px; 
+                     text-align: left; 
+                     cursor: pointer; 
+                     transition: all 0.2s ease;
+                     font-size: 13px;
+                     display: flex;
+                     justify-content: space-between;
+                     align-items: center;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="/static/folder.png" alt="Dataset" class="dataset-icon" style="width: 16px;">
+                <span style="font-weight: 500;">{{ ds.display_name }}</span>
+              </div>
+              <span style="font-size: 11px; opacity: 0.8;">{{ ds.shape.0 }}×{{ ds.shape.1 }}</span>
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        
+        <!-- Active Dataset Info -->
+        {% if active_dataset %}
         <div class="dataset-info">
           <div class="dataset-title">
             <img src="/static/folder.png" alt="Dataset Icon" class="dataset-icon" style="width: 20px;">
-            <strong> {{ dataset.display_name }}</strong>
+            <strong> {{ active_dataset.display_name }}</strong>
           </div>
           <div style="font-size: 12px; margin-top: 4px; color: var(--text-muted);">
-            {{ columns|length }} columns • {{ preview_rows|length }}+ rows
+            {{ active_dataset.columns|length }} columns • {{ active_dataset.shape.0 }} rows
           </div>
         </div>
+        {% endif %}
+        
+        <!-- Merge Datasets Button -->
+        {% if can_merge %}
+        <button onclick="showMergeModal()" style="width: 100%; margin-top: 12px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 10px; border-radius: 0px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s ease;">
+          🔗 Merge Datasets
+        </button>
+        {% endif %}
       </div>  
       
       <div class="sidebar-content">
@@ -1273,10 +1314,10 @@
 
         <!-- Schema Tab -->
         <div class="tab-content active" id="schema-tab">
-          <div class="section-title"> Column Schema</div>
+          <div class="section-title">Column Schema</div>
           {% if data_profile %}
             {% for col in data_profile.columns %}
-            <div class="column-chip" data-query="SELECT &quot;{{ col.name }}&quot;, COUNT(*) as count FROM &quot;{{ dataset.name }}&quot; GROUP BY &quot;{{ col.name }}&quot; ORDER BY count DESC LIMIT 10">
+            <div class="column-chip" data-query="SELECT &quot;{{ col.name }}&quot;, COUNT(*) as count FROM dataset GROUP BY &quot;{{ col.name }}&quot; ORDER BY count DESC LIMIT 10">
               <div class="column-header">
                 <span class="column-name">{{ col.name }}</span>
                 <span class="column-type">{{ col.dtype }}</span>
@@ -1604,6 +1645,11 @@ function openAdvancedVisualization() {
 </script>
 
 <script>
+// Global state for active dataset
+let activeDatasetIndex = {% if active_dataset %}{{ active_dataset.index }}{% else %}0{% endif %};
+
+console.log('🎯 Initialized active dataset index:', activeDatasetIndex);
+
 // Theme toggle functionality
 function toggleTheme() {
   console.log('Toggle theme called'); // Debug log
@@ -2173,30 +2219,43 @@ async function sendQuery() {
   sendBtn.textContent = "Sending...";
 
   try {
-    const response = await fetch(`/run_query/{{ dataset.name }}/`, {
+    console.log(`📤 Sending query to dataset index: ${activeDatasetIndex}`);
+    
+    const response = await fetch(`/run_multi_query/`, {
       method: "POST",
       headers: {
         "X-CSRFToken": "{{ csrf_token }}",
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ 
+        query: query,
+        dataset_index: activeDatasetIndex 
+      })
     });
 
     const data = await response.json();
     
-    // Format bot reply
-    let reply = `<div style="margin-bottom: 12px;"><strong>SQL Query:</strong> <code style="background: var(--bg-tertiary); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px;">${data.query}</code>`;
+    // Format bot reply - handle both old and new response formats
+    const sqlQuery = data.sql || data.query || 'N/A';
+    const results = data.results || data.result || [];
+    const errorMsg = data.error || data.message;
+    
+    let reply = `<div style="margin-bottom: 12px;"><strong>SQL Query:</strong> <code style="background: var(--bg-tertiary); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px;">${sqlQuery}</code>`;
     
     if (data.auto_limit_added) {
       reply += ` <span style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500;">LIMIT 1000 (auto)</span>`;
     }
     
+    if (data.dataset_name) {
+      reply += ` <span style="background: var(--btn-primary); color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500;">📊 ${data.dataset_name}</span>`;
+    }
+    
     reply += `</div>`;
     
-    if (data.error) {
+    if (data.status === 'error' || errorMsg) {
       reply += `<div style="color: var(--error-text); background: var(--error-bg); border: 1px solid var(--error-border); padding: 16px; border-radius: 8px; margin-top: 12px;">
         <div style="font-weight: bold; margin-bottom: 8px;">⚠️ Query Error</div>
-        <div>${data.error}</div>
+        <div>${errorMsg}</div>
         <div style="margin-top: 12px; font-size: 13px;">
           <strong>Tips:</strong>
           <ul style="margin: 4px 0 0 20px;">
@@ -2206,27 +2265,27 @@ async function sendQuery() {
           </ul>
         </div>
       </div>`;
-    } else if (Array.isArray(data.result) && data.result.length > 0) {
+    } else if (Array.isArray(results) && results.length > 0) {
       reply += "<table class='result-table'><thead><tr>";
-      Object.keys(data.result[0]).forEach(col => reply += `<th>${col}</th>`);
+      Object.keys(results[0]).forEach(col => reply += `<th>${col}</th>`);
       reply += "</tr></thead><tbody>";
-      data.result.forEach(row => {
+      results.forEach(row => {
         reply += "<tr>";
         Object.values(row).forEach(val => reply += `<td>${val ?? ""}</td>`);
         reply += "</tr>";
       });
       reply += "</tbody></table>";
-      reply += `<div style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">${data.result.length} row(s) returned</div>`;
+      reply += `<div style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">${results.length} row(s) returned</div>`;
       
       // Add visualization buttons if data is suitable for charts
-      if (canVisualize(data.result)) {
+      if (canVisualize(results)) {
         const buttonContainerId = 'viz-container-' + Date.now();
         
         // Store data globally for chart builder
         window.chartBuilderData = window.chartBuilderData || {};
         window.chartBuilderData[buttonContainerId] = {
-          results: data.result,
-          columns: data.columns || Object.keys(data.result[0])
+          results: results,
+          columns: data.columns || Object.keys(results[0])
         };
         
         console.log('Stored chart builder data for container:', buttonContainerId);
@@ -2768,6 +2827,178 @@ function showNotification(message, type) {
       document.body.removeChild(notification);
     }, 300);
   }, 3000);
+}
+
+// Multi-Dataset Functions
+function switchDataset(datasetIndex) {
+  console.log(`🔄 Switching to dataset index: ${datasetIndex}`);
+  
+  fetch(`/switch_dataset/${datasetIndex}/`, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}',
+      'Content-Type': 'application/json'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      // Update global active dataset index
+      activeDatasetIndex = datasetIndex;
+      console.log(`✅ Active dataset switched to index: ${activeDatasetIndex}`);
+      
+      // Reload page to show new active dataset
+      window.location.reload();
+    } else {
+      showNotification('Failed to switch dataset', 'error');
+    }
+  })
+  .catch(error => {
+    console.error('Error switching dataset:', error);
+    showNotification('Error switching dataset', 'error');
+  });
+}
+
+function showMergeModal() {
+  const datasets = {{ datasets|safe|default:"[]" }};
+  
+  let modal = document.getElementById('mergeModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'mergeModal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+    
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = `
+      background: var(--bg-primary);
+      padding: 30px;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+    
+    modalContent.innerHTML = `
+      <h2 style="color: var(--text-primary); margin-bottom: 20px;">Merge Datasets</h2>
+      
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; color: var(--text-secondary); margin-bottom: 8px; font-weight: 500;">Select Datasets to Merge:</label>
+        ${datasets.map((ds, idx) => `
+          <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: var(--bg-secondary); margin-bottom: 6px; border-radius: 4px; cursor: pointer;">
+            <input type="checkbox" name="mergeDataset" value="${idx}" style="width: 16px; height: 16px;">
+            <span style="color: var(--text-primary);">${ds.display_name} (${ds.shape[0]}×${ds.shape[1]})</span>
+          </label>
+        `).join('')}
+      </div>
+      
+      <div style="margin-bottom: 20px;">
+        <label style="display: block; color: var(--text-secondary); margin-bottom: 8px; font-weight: 500;">Merge Type:</label>
+        <select id="mergeType" style="width: 100%; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+          <option value="concat">Concatenate (Stack Rows)</option>
+          <option value="join">Join (On Common Column)</option>
+        </select>
+      </div>
+      
+      <div id="joinOptions" style="display: none; margin-bottom: 20px;">
+        <label style="display: block; color: var(--text-secondary); margin-bottom: 8px; font-weight: 500;">Join Column:</label>
+        <input type="text" id="joinColumn" placeholder="e.g., id, user_id" style="width: 100%; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+        
+        <label style="display: block; color: var(--text-secondary); margin: 12px 0 8px 0; font-weight: 500;">Join Type:</label>
+        <select id="joinType" style="width: 100%; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+          <option value="inner">Inner Join</option>
+          <option value="outer">Outer Join</option>
+          <option value="left">Left Join</option>
+          <option value="right">Right Join</option>
+        </select>
+      </div>
+      
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button onclick="closeMergeModal()" style="padding: 10px 20px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">Cancel</button>
+        <button onclick="executeMerge()" style="padding: 10px 20px; background: var(--btn-primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Merge</button>
+      </div>
+    `;
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Show/hide join options based on merge type
+    document.getElementById('mergeType').addEventListener('change', (e) => {
+      document.getElementById('joinOptions').style.display = e.target.value === 'join' ? 'block' : 'none';
+    });
+  } else {
+    modal.style.display = 'flex';
+  }
+}
+
+function closeMergeModal() {
+  const modal = document.getElementById('mergeModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+function executeMerge() {
+  const selectedDatasets = Array.from(document.querySelectorAll('input[name="mergeDataset"]:checked'))
+    .map(cb => parseInt(cb.value));
+  
+  if (selectedDatasets.length < 2) {
+    showNotification('Please select at least 2 datasets', 'error');
+    return;
+  }
+  
+  const mergeType = document.getElementById('mergeType').value;
+  const payload = {
+    merge_type: mergeType,
+    dataset_indices: selectedDatasets
+  };
+  
+  if (mergeType === 'join') {
+    const joinColumn = document.getElementById('joinColumn').value.trim();
+    const joinType = document.getElementById('joinType').value;
+    
+    if (!joinColumn) {
+      showNotification('Please specify a join column', 'error');
+      return;
+    }
+    
+    payload.join_column = joinColumn;
+    payload.join_type = joinType;
+  }
+  
+  fetch('/merge_datasets/', {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      showNotification(`Success! ${data.message}`, 'success');
+      closeMergeModal();
+      // Reload to show merged dataset
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      showNotification(`Merge failed: ${data.message}`, 'error');
+    }
+  })
+  .catch(error => {
+    console.error('Merge error:', error);
+    showNotification('Error merging datasets', 'error');
+  });
 }
 
 </script>

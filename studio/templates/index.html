@@ -278,9 +278,29 @@
     <!-- Upload -->
     <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
       {% csrf_token %}
-      <input type="file" id="fileInput" name="file" accept=".csv,.xlsx,.json" onchange="document.getElementById('uploadForm').submit()">
-      <label for="fileInput" class="btn">Upload Dataset</label>
+      <input type="file" id="fileInput" name="files" accept=".csv,.xlsx,.json" multiple onchange="handleFileUpload()">
+      <label for="fileInput" class="btn">Upload Dataset(s)</label>
     </form>
+    
+    <!-- File Selection Preview -->
+    <div id="filePreview" style="margin-top: 20px; display: none;">
+      <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; max-width: 600px; margin: 0 auto;">
+        <h3 style="color: #7059f2; margin: 0 0 12px 0; font-size: 16px;">Selected Files:</h3>
+        <div id="fileList" style="text-align: left; margin-bottom: 16px;"></div>
+        <button type="button" class="btn" onclick="uploadFiles()" style="width: 100%; margin: 0;">Upload All Files</button>
+      </div>
+    </div>
+    
+    <!-- OR Divider -->
+    <div style="margin: 30px 0; text-align: center; position: relative;">
+      <div style="height: 1px; background: linear-gradient(to right, transparent, #333, transparent);"></div>
+      <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #0f0f0f; padding: 0 15px; color: #888; font-size: 14px;">OR</span>
+    </div>
+    
+    <!-- Online Datasets Button -->
+    <button class="btn" onclick="showOnlineDatasets()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 10px;">
+      🌐 Browse Online Datasets
+    </button>
 
     <!-- Session Management -->
     <div class="session-controls">
@@ -350,5 +370,360 @@
     </div>
 
   </div>
+  
+  <script>
+    let selectedFiles = [];
+    
+    function handleFileUpload() {
+      const fileInput = document.getElementById('fileInput');
+      const files = Array.from(fileInput.files);
+      selectedFiles = files;
+      
+      if (files.length === 0) {
+        document.getElementById('filePreview').style.display = 'none';
+        return;
+      }
+      
+      // Show file preview
+      const fileList = document.getElementById('fileList');
+      fileList.innerHTML = files.map((file, index) => `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #0f0f0f; border: 1px solid #444; margin-bottom: 6px; border-radius: 4px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="color: #7059f2; font-weight: 600;">${index + 1}.</span>
+            <span style="color: #f0f0f0;">${file.name}</span>
+            <span style="color: #888; font-size: 12px;">(${(file.size / 1024).toFixed(2)} KB)</span>
+          </div>
+          <button type="button" onclick="removeFile(${index})" style="background: #ff4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Remove</button>
+        </div>
+      `).join('');
+      
+      document.getElementById('filePreview').style.display = 'block';
+    }
+    
+    function removeFile(index) {
+      selectedFiles.splice(index, 1);
+      const dataTransfer = new DataTransfer();
+      selectedFiles.forEach(file => dataTransfer.items.add(file));
+      document.getElementById('fileInput').files = dataTransfer.files;
+      handleFileUpload();
+    }
+    
+    function uploadFiles() {
+      if (selectedFiles.length === 0) {
+        alert('Please select at least one file');
+        return;
+      }
+      
+      const formData = new FormData();
+      selectedFiles.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      // Add CSRF token
+      const csrftoken = getCookie('csrftoken');
+      
+      // Show loading state
+      const filePreview = document.getElementById('filePreview');
+      filePreview.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #7059f2;">Uploading files...</p></div>';
+      
+      fetch('/upload_datasets/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrftoken
+        },
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'success') {
+          // Redirect to dataset preview with all datasets
+          window.location.href = data.redirect_url;
+        } else {
+          alert('Upload failed: ' + data.message);
+          filePreview.style.display = 'none';
+        }
+      })
+      .catch(error => {
+        console.error('Upload error:', error);
+        alert('Upload failed. Please try again.');
+        filePreview.style.display = 'none';
+      });
+    }
+    
+    // Online Datasets Modal - Google Search Style
+    function showOnlineDatasets() {
+      let modal = document.getElementById('onlineDatasetModal');
+      
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'onlineDatasetModal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.95);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-start;
+          z-index: 10000;
+          overflow-y: auto;
+          padding-top: 60px;
+        `;
+        
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = `
+          width: 90%;
+          max-width: 800px;
+        `;
+        
+        modalContent.innerHTML = `
+          <div style="text-align: center; margin-bottom: 40px;">
+            <h1 style="color: #f0f0f0; font-size: 36px; margin: 0 0 10px 0; font-weight: 300;">
+              Datanaut<span style="color: #7059f2;">.ai</span> Dataset Search
+            </h1>
+            <p style="color: #888; font-size: 14px;">Search for any dataset using AI - like Google for data</p>
+          </div>
+          
+          <div style="position: relative; margin-bottom: 30px;">
+            <input type="text" id="datasetSearchInput" placeholder="🔍 Search for datasets (e.g., cricket test match runs, covid data, stock prices)..." 
+              style="width: 100%; padding: 16px 60px 16px 20px; background: #1a1a1a; color: #f0f0f0; border: 2px solid #333; border-radius: 50px; font-size: 16px; transition: all 0.3s ease;"
+              onkeypress="if(event.key === 'Enter') searchDatasets()"
+              onfocus="this.style.borderColor='#7059f2'; this.style.boxShadow='0 0 20px rgba(112, 89, 242, 0.3)';"
+              onblur="this.style.borderColor='#333'; this.style.boxShadow='none';">
+            <button onclick="searchDatasets()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 50px; cursor: pointer; font-weight: 500; font-size: 14px; transition: all 0.2s ease;"
+              onmouseover="this.style.transform='translateY(-50%) scale(1.05)'"
+              onmouseout="this.style.transform='translateY(-50%) scale(1)'">
+              Search
+            </button>
+            <button onclick="closeOnlineDatasetModal()" style="position: absolute; right: 95px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 10px;">&times;</button>
+          </div>
+          
+          <div id="searchSuggestions" style="display: none; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <div style="color: #888; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Popular Searches:</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${['cricket statistics', 'covid-19 cases', 'stock market', 'climate data', 'titanic passengers', 'world population', 'movie ratings', 'iris flowers'].map(term => 
+                `<button onclick="document.getElementById('datasetSearchInput').value='${term}'; searchDatasets();" 
+                  style="background: #0f0f0f; color: #f0f0f0; border: 1px solid #444; padding: 6px 12px; border-radius: 15px; cursor: pointer; font-size: 12px; transition: all 0.2s ease;"
+                  onmouseover="this.style.background='#7059f2'; this.style.borderColor='#7059f2'"
+                  onmouseout="this.style.background='#0f0f0f'; this.style.borderColor='#444'">
+                  ${term}
+                </button>`
+              ).join('')}
+            </div>
+          </div>
+          
+          <div id="onlineDatasetList" style="min-height: 200px;">
+            <div id="searchPlaceholder" style="text-align: center; padding: 60px 20px; color: #666;">
+              <div style="font-size: 48px; margin-bottom: 16px;">🔍</div>
+              <div style="font-size: 18px; margin-bottom: 8px;">Search for any dataset</div>
+              <div style="font-size: 14px;">Type your query and press Enter or click Search</div>
+            </div>
+          </div>
+        `;
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+        
+        // Show suggestions
+        document.getElementById('searchSuggestions').style.display = 'block';
+        
+        // Focus on search input
+        setTimeout(() => {
+          document.getElementById('datasetSearchInput').focus();
+        }, 100);
+      } else {
+        modal.style.display = 'flex';
+        document.getElementById('datasetSearchInput').focus();
+      }
+    }
+    
+    function closeOnlineDatasetModal() {
+      const modal = document.getElementById('onlineDatasetModal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    }
+    
+    function searchDatasets() {
+      const searchInput = document.getElementById('datasetSearchInput');
+      const query = searchInput.value.trim();
+      const listDiv = document.getElementById('onlineDatasetList');
+      
+      if (!query) {
+        listDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #888;">Please enter a search query</div>';
+        return;
+      }
+      
+      // Show loading state
+      listDiv.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="width: 50px; height: 50px; border: 4px solid #333; border-top: 4px solid #7059f2; border-radius: 50%; margin: 0 auto 20px; animation: spin 1s linear infinite;"></div>
+          <div style="color: #f0f0f0; font-size: 16px; margin-bottom: 8px;">Searching for datasets...</div>
+          <div style="color: #888; font-size: 14px;">AI is finding relevant datasets for: "${query}"</div>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      `;
+      
+      // Hide suggestions when searching
+      document.getElementById('searchSuggestions').style.display = 'none';
+      
+      fetch('/search_online_datasets/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query: query })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'success') {
+          renderOnlineDatasets(data.datasets, query);
+        } else {
+          listDiv.innerHTML = `<div style="text-align: center; padding: 40px; color: #ff4444;">
+            <div style="font-size: 24px; margin-bottom: 12px;">❌</div>
+            <div>Search failed: ${data.message}</div>
+          </div>`;
+        }
+      })
+      .catch(error => {
+        console.error('Search error:', error);
+        listDiv.innerHTML = `<div style="text-align: center; padding: 40px; color: #ff4444;">
+          <div style="font-size: 24px; margin-bottom: 12px;">❌</div>
+          <div>Error performing search. Please try again.</div>
+        </div>`;
+      });
+    }
+    
+    function renderOnlineDatasets(datasets, query) {
+      const listDiv = document.getElementById('onlineDatasetList');
+      
+      if (datasets.length === 0) {
+        listDiv.innerHTML = `
+          <div style="text-align: center; padding: 60px 20px; color: #888;">
+            <div style="font-size: 48px; margin-bottom: 16px;">🔍</div>
+            <div style="font-size: 18px; margin-bottom: 8px;">No datasets found</div>
+            <div style="font-size: 14px;">Try different keywords or search terms</div>
+          </div>
+        `;
+        return;
+      }
+      
+      listDiv.innerHTML = `
+        <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #333;">
+          <div style="color: #888; font-size: 14px;">
+            Found <span style="color: #7059f2; font-weight: 600;">${datasets.length} dataset${datasets.length > 1 ? 's' : ''}</span> for "${query}"
+          </div>
+        </div>
+      ` + datasets.map((ds, index) => `
+        <div style="background: #1a1a1a; border: 1px solid #333; padding: 20px; border-radius: 8px; margin-bottom: 16px; cursor: pointer; transition: all 0.3s ease; position: relative; overflow: hidden;"
+          onmouseover="this.style.borderColor='#7059f2'; this.style.background='#1f1f2e'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(112, 89, 242, 0.2)';"
+          onmouseout="this.style.borderColor='#333'; this.style.background='#1a1a1a'; this.style.transform='translateY(0)'; this.style.boxShadow='none';"
+          onclick="fetchOnlineDataset('${ds.id}', '${ds.url}', '${ds.name.replace(/'/g, "\\'")}')">
+          
+          <div style="position: absolute; top: 16px; right: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+            ${ds.category || 'Dataset'}
+          </div>
+          
+          <div style="margin-bottom: 12px; padding-right: 100px;">
+            <div style="color: #7059f2; font-size: 12px; font-weight: 500; margin-bottom: 4px;">RESULT ${index + 1}</div>
+            <h3 style="color: #f0f0f0; margin: 0 0 8px 0; font-size: 20px; font-weight: 600; line-height: 1.3;">${ds.name}</h3>
+          </div>
+          
+          <p style="color: #b0b0b0; margin: 0 0 16px 0; font-size: 14px; line-height: 1.6;">${ds.description}</p>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px;">
+            <div style="display: flex; align-items: center; gap: 6px; color: #888;">
+              <span style="font-size: 16px;">📊</span>
+              <span><strong style="color: #f0f0f0;">${ds.rows}</strong> rows</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; color: #888;">
+              <span style="font-size: 16px;">📋</span>
+              <span><strong style="color: #f0f0f0;">${ds.columns}</strong> columns</span>
+            </div>
+            ${ds.size ? `
+            <div style="display: flex; align-items: center; gap: 6px; color: #888;">
+              <span style="font-size: 16px;">💾</span>
+              <span><strong style="color: #f0f0f0;">${ds.size}</strong></span>
+            </div>
+            ` : ''}
+          </div>
+          
+          <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #2a2a2a;">
+            <div style="color: #7059f2; font-size: 12px; font-weight: 500;">▶ Click to load this dataset</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function fetchOnlineDataset(datasetId, url, name) {
+      const listDiv = document.getElementById('onlineDatasetList');
+      listDiv.innerHTML = `
+        <div style="text-align: center; padding: 60px 20px;">
+          <div style="width: 60px; height: 60px; border: 5px solid #333; border-top: 5px solid #7059f2; border-radius: 50%; margin: 0 auto 20px; animation: spin 1s linear infinite;"></div>
+          <div style="color: #f0f0f0; font-size: 18px; font-weight: 600; margin-bottom: 8px;">Loading Dataset</div>
+          <div style="color: #888; font-size: 14px; margin-bottom: 20px;">${name}</div>
+          <div style="color: #666; font-size: 13px; background: #1a1a1a; padding: 12px; border-radius: 6px; max-width: 500px; margin: 0 auto; word-break: break-all;">${url}</div>
+        </div>
+      `;
+      
+      fetch('/fetch_online_dataset/', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          dataset_id: datasetId,
+          url: url,
+          name: name
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'success') {
+          listDiv.innerHTML = `
+            <div style="text-align: center; padding: 60px 20px;">
+              <div style="font-size: 72px; margin-bottom: 20px;">✅</div>
+              <div style="color: #10b981; font-size: 20px; font-weight: 600; margin-bottom: 8px;">Dataset Loaded Successfully!</div>
+              <div style="color: #888; font-size: 14px;">Redirecting to analysis...</div>
+            </div>
+          `;
+          setTimeout(() => {
+            closeOnlineDatasetModal();
+            window.location.href = data.redirect_url;
+          }, 1000);
+        } else {
+          listDiv.innerHTML = `
+            <div style="text-align: center; padding: 60px 20px;">
+              <div style="font-size: 72px; margin-bottom: 20px;">❌</div>
+              <div style="color: #ff4444; font-size: 18px; font-weight: 600; margin-bottom: 8px;">Failed to Load Dataset</div>
+              <div style="color: #888; font-size: 14px; margin-bottom: 20px;">${data.message}</div>
+              <button onclick="searchDatasets()" style="background: #7059f2; color: white; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-weight: 500;">Try Another Search</button>
+            </div>
+          `;
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching dataset:', error);
+        listDiv.innerHTML = `
+          <div style="text-align: center; padding: 60px 20px;">
+            <div style="font-size: 72px; margin-bottom: 20px;">❌</div>
+            <div style="color: #ff4444; font-size: 18px; font-weight: 600; margin-bottom: 8px;">Error Loading Dataset</div>
+            <div style="color: #888; font-size: 14px; margin-bottom: 20px;">Network error or invalid URL</div>
+            <button onclick="searchDatasets()" style="background: #7059f2; color: white; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-weight: 500;">Try Another Search</button>
+          </div>
+        `;
+      });
+    }
+  </script>
 </body>
 </html>
