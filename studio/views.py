@@ -309,8 +309,8 @@ def fetch_online_dataset(request):
             print(f"⚠️ CSV validation warning: {e}")
             # Try to continue anyway
         
-        # Save to Supabase
-        clear_session_data(request)
+        # Save to Supabase (append to existing datasets, don't clear)
+        uploaded_datasets = request.session.get('datasets', [])
         
         session_key = request.session.session_key or str(int(time.time()))
         timestamp = int(time.time() * 1000)  # Use milliseconds for consistency
@@ -329,8 +329,8 @@ def fetch_online_dataset(request):
         
         print(f"✅ Uploaded online dataset to Supabase: {path_in_bucket}")
         
-        # Store in session
-        request.session['datasets'] = [{
+        # Append to existing datasets (not replace)
+        uploaded_datasets.append({
             'supabase_path': path_in_bucket,
             'stored_name': stored_name,
             'display_name': dataset_name if dataset_name.endswith('.csv') else f"{dataset_name}.csv",
@@ -338,8 +338,10 @@ def fetch_online_dataset(request):
             'size': len(content),
             'is_online': True,
             'source_url': dataset_url
-        }]
-        request.session['active_dataset_index'] = 0
+        })
+        
+        request.session['datasets'] = uploaded_datasets
+        request.session['active_dataset_index'] = len(uploaded_datasets) - 1
         request.session['current_dataset_path'] = path_in_bucket
         request.session['uploaded_files'] = request.session['datasets']
         request.session.modified = True
@@ -393,14 +395,9 @@ def upload_multiple_datasets(request):
         session_key = request.session.session_key
         print(f"📝 Session key: {session_key}")
         
-        # Clear previous session data for clean slate
-        clear_session_data(request)
-        
-        # Initialize session storage for multiple datasets
-        request.session['datasets'] = []
-        request.session['active_dataset_index'] = 0
-        request.session['uploaded_files'] = []
-        uploaded_datasets = []
+        # Get existing datasets instead of clearing them (append mode)
+        uploaded_datasets = request.session.get('datasets', [])
+        request.session['uploaded_files'] = request.session.get('uploaded_files', [])
         
         for file in files:
             try:
@@ -463,8 +460,8 @@ def upload_multiple_datasets(request):
         # Store all datasets in session
         request.session['datasets'] = uploaded_datasets
         request.session['uploaded_files'] = uploaded_datasets  # Keep in sync
-        request.session['current_dataset_path'] = uploaded_datasets[0]['supabase_path']
-        request.session['active_dataset_index'] = 0
+        request.session['current_dataset_path'] = uploaded_datasets[-1]['supabase_path']
+        request.session['active_dataset_index'] = len(uploaded_datasets) - 1  # Set active to the last uploaded file
         request.session.modified = True
         
         print(f"\n📦 Session state after upload:")
@@ -3162,68 +3159,63 @@ def report_builder(request):
     print(f"DEBUG Report Builder - Dataset schemas: {len(dataset_schemas)} items")
     print(f"DEBUG Report Builder - Query tables: {len(query_tables)} items")
     
-    # Check if user has custom report blocks, otherwise build from session data
-    report_blocks = request.session.get('report_blocks', [])
+    # ALWAYS rebuild report blocks from current session data to include all new items
+    # Build report blocks from session data
+    blocks = []
     
-    if not report_blocks:
-        # Build initial report blocks from session data
-        blocks = []
-        
-        # Combine and sort all blocks by timestamp if available
-        all_items = []
-        
-        # Add dataset schemas first
-        for item in dataset_schemas:
-            if 'timestamp' in item:
-                all_items.append(item)
-            else:
-                item['timestamp'] = datetime.utcnow().isoformat()
-                all_items.append(item)
-        
-        # Add chat messages
-        for item in chat_history:
-            if 'timestamp' in item:
-                all_items.append(item)
-            else:
-                item['timestamp'] = datetime.utcnow().isoformat()
-                all_items.append(item)
-        
-        # Add visualizations  
-        for item in visualizations:
-            if 'timestamp' in item:
-                all_items.append(item)
-            else:
-                item['timestamp'] = datetime.utcnow().isoformat()
-                all_items.append(item)
-        
-        # Add query tables
-        for item in query_tables:
-            if 'timestamp' in item:
-                all_items.append(item)
-            else:
-                item['timestamp'] = datetime.utcnow().isoformat()
-                all_items.append(item)
-        
-        # Add other tables
-        for item in tables:
-            if 'timestamp' in item:
-                all_items.append(item)
-            else:
-                item['timestamp'] = datetime.utcnow().isoformat()
-                all_items.append(item)
-        
-        # Sort by timestamp
-        try:
-            all_items.sort(key=lambda x: x.get('timestamp', ''))
-        except:
-            pass  # If timestamp sorting fails, keep original order
-        
-        # Save to session
-        request.session['report_blocks'] = all_items
-        request.session.modified = True  # Ensure session is saved
-        blocks = all_items
-    else:
-        blocks = report_blocks
+    # Combine and sort all blocks by timestamp if available
+    all_items = []
+    
+    # Add dataset schemas first
+    for item in dataset_schemas:
+        if 'timestamp' in item:
+            all_items.append(item)
+        else:
+            item['timestamp'] = datetime.utcnow().isoformat()
+            all_items.append(item)
+    
+    # Add chat messages
+    for item in chat_history:
+        if 'timestamp' in item:
+            all_items.append(item)
+        else:
+            item['timestamp'] = datetime.utcnow().isoformat()
+            all_items.append(item)
+    
+    # Add visualizations  
+    for item in visualizations:
+        if 'timestamp' in item:
+            all_items.append(item)
+        else:
+            item['timestamp'] = datetime.utcnow().isoformat()
+            all_items.append(item)
+    
+    # Add query tables
+    for item in query_tables:
+        if 'timestamp' in item:
+            all_items.append(item)
+        else:
+            item['timestamp'] = datetime.utcnow().isoformat()
+            all_items.append(item)
+    
+    # Add other tables
+    for item in tables:
+        if 'timestamp' in item:
+            all_items.append(item)
+        else:
+            item['timestamp'] = datetime.utcnow().isoformat()
+            all_items.append(item)
+    
+    # Sort by timestamp
+    try:
+        all_items.sort(key=lambda x: x.get('timestamp', ''))
+    except:
+        pass  # If timestamp sorting fails, keep original order
+    
+    # Save to session
+    request.session['report_blocks'] = all_items
+    request.session.modified = True  # Ensure session is saved
+    blocks = all_items
     
     # Get dataset info for context
     dataset_display_name = request.session.get("dataset_display_name", "Dataset")
