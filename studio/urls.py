@@ -3,7 +3,7 @@ from django.urls import path
 from studio import views  # views.py is inside studio app
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # Admin URL is defined in core/urls.py - removed duplicate
     path('', views.index, name='index'),
     path('upload/', views.upload_dataset, name='upload_dataset'),
     path('upload_datasets/', views.upload_multiple_datasets, name='upload_multiple_datasets'),
@@ -15,7 +15,7 @@ urlpatterns = [
     path('run_multi_query/', views.run_multi_dataset_query, name='run_multi_query'),
     path('full_dataset/', views.full_dataset, name='full_dataset'),
     path('run_query/<str:dataset_name>/', views.run_query, name='run_query'),
-    path('preview/<str:dataset_name>/', views.dataset_preview, name='dataset_preview'),
+    # Legacy dataset_preview URL removed - use multi_dataset_preview instead
     path('generate_chart/', views.generate_chart, name='generate_chart'),
     path('chart_builder/', views.chart_builder, name='chart_builder'),
     path("report-builder/", views.report_builder, name="report_builder"),
@@ -32,4 +32,5 @@ urlpatterns = [
     path('debug_session/', views.debug_session, name='debug_session'),
     path('generate_advanced_chart/', views.generate_advanced_chart, name='generate_advanced_chart'),
     path('get_column_values/', views.get_column_values, name='get_column_values'),
+    path('transcribe_audio/', views.transcribe_audio, name='transcribe_audio'),
 ]

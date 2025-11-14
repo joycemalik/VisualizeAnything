@@ -1593,8 +1593,7 @@
               rows="1"
             ></textarea>
             <button class="voice-btn" id="voiceBtn" title="Click to speak your query" onclick="toggleVoiceRecognition()">
-              <img src=studio\static\5569.jpg  alt="microphone" class="voice-icon">
-            </button>
+                <img src="{% static '5569.jpg' %}" alt="microphone" class="voice-icon">            </button>
             <button class="send-btn" id="sendBtn" onclick="sendQuery()">Send</button>
           </div>
         </div>
@@ -1632,6 +1631,7 @@
   <!-- Overlay for mobile -->
   <div class="overlay" id="overlay"></div>
 
+  {{ datasets|json_script:"datasets-json-data" }}
 
 <script>
 function openReportBuilder() {
@@ -1949,100 +1949,94 @@ function uploadNewDataset() {
   window.location.href = '/';
 }
 
-// Voice Recognition Setup
-let recognition = null;
-let isListening = false;
+// Voice Recognition Setup using Groq Whisper API
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
 
-function initVoiceRecognition() {
-  // Check for browser support
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  
-  if (!SpeechRecognition) {
-    console.warn('⚠️ Speech Recognition not supported in this browser');
-    return null;
-  }
-  
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-  
-  recognition.onstart = () => {
-    console.log('🎤 Voice recognition started');
-    isListening = true;
-    const voiceBtn = document.querySelector('.voice-btn');
-    if (voiceBtn) {
-      voiceBtn.style.filter = 'brightness(0) saturate(100%) invert(45%) sepia(93%) saturate(3456%) hue-rotate(235deg) brightness(99%) contrast(92%)';
-      voiceBtn.style.animation = 'pulse 1.5s infinite';
+async function toggleVoiceRecognition() {
+    const voiceBtn = document.getElementById('voiceBtn');
+    const queryInput = document.getElementById('queryInput');
+
+    if (isRecording) {
+        // Stop recording
+        mediaRecorder.stop();
+        isRecording = false;
+        voiceBtn.style.animation = '';
+        voiceBtn.style.filter = '';
+        console.log('🛑 Recording stopped.');
+        
+    } else {
+        // Start recording
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = []; // Clear old chunks
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                console.log('📤 Sending audio to server...');
+                appendMessage('🎤 Processing audio...', 'system');
+                
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'audio.webm');
+                
+                // Send to Django
+                try {
+                    const response = await fetch('/transcribe_audio/', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'success' && data.text.trim()) {
+                        queryInput.value = data.text;
+                        // auto-resize textarea
+                        queryInput.style.height = 'auto';
+                        queryInput.style.height = queryInput.scrollHeight + 'px';
+                        queryInput.focus();
+                        console.log('✅ Transcription successful:', data.text);
+                    } else {
+                        console.error('Transcription failed:', data.message);
+                        appendMessage(`❌ Speech-to-text failed: ${data.message}`, 'system');
+                    }
+
+                } catch (err) {
+                    console.error('Error sending audio:', err);
+                    appendMessage('❌ Error sending audio to server.', 'system');
+                }
+                
+                // Clean up the stream
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            isRecording = true;
+            voiceBtn.style.filter = 'brightness(0) saturate(100%) invert(45%) sepia(93%) saturate(3456%) hue-rotate(235deg) brightness(99%) contrast(92%)';
+            voiceBtn.style.animation = 'pulse 1.5s infinite';
+            console.log('🎤 Recording started...');
+
+        } catch (err) {
+            console.error('Error accessing microphone:', err);
+            if (err.name === 'NotAllowedError') {
+                appendMessage('<strong>Microphone access denied.</strong><br>Please allow microphone access in your browser settings.', 'system');
+            } else {
+                appendMessage(`❌ Error accessing microphone: ${err.message}`, 'system');
+            }
+        }
     }
-  };
-  
-  recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    console.log('📝 Transcript:', transcript);
-    
-    const input = document.getElementById('queryInput');
-    if (input) {
-      input.value = transcript;
-      input.style.height = 'auto';
-      input.style.height = input.scrollHeight + 'px';
-      input.focus();
-    }
-  };
-  
-  recognition.onerror = (event) => {
-    console.error('❌ Speech recognition error:', event.error);
-    isListening = false;
-    const voiceBtn = document.querySelector('.voice-btn');
-    if (voiceBtn) {
-      voiceBtn.style.filter = '';
-      voiceBtn.style.animation = '';
-    }
-    
-    if (event.error === 'no-speech') {
-      appendMessage('No speech detected. Please try again.', 'system');
-    } else if (event.error === 'not-allowed') {
-      appendMessage('Microphone access denied. Please enable it in your browser settings.', 'system');
-    }
-  };
-  
-  recognition.onend = () => {
-    console.log('🛑 Voice recognition ended');
-    isListening = false;
-    const voiceBtn = document.querySelector('.voice-btn');
-    if (voiceBtn) {
-      voiceBtn.style.filter = '';
-      voiceBtn.style.animation = '';
-    }
-  };
-  
-  return recognition;
 }
 
-function toggleVoiceRecognition() {
-  if (!recognition) {
-    recognition = initVoiceRecognition();
-    if (!recognition) {
-      appendMessage('Voice recognition is not supported in your browser. Please use Chrome, Edge, or Safari.', 'system');
-      return;
-    }
-  }
-  
-  if (isListening) {
-    recognition.stop();
-  } else {
-    try {
-      recognition.start();
-    } catch (error) {
-      console.error('Error starting recognition:', error);
-      isListening = false;
-    }
-  }
-}
-
-// Initialize voice recognition on page load
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
-  initVoiceRecognition();
   renderMarkdownInQuestions();
 });
 
@@ -2860,7 +2854,7 @@ function switchDataset(datasetIndex) {
 }
 
 function showMergeModal() {
-  const datasets = {{ datasets|safe|default:"[]" }};
+  const datasets = JSON.parse(document.getElementById('datasets-json-data').textContent);
   
   let modal = document.getElementById('mergeModal');
   if (!modal) {

@@ -43,6 +43,29 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 TEMP_FILES = {}
 
+def get_active_dataset_path(request):
+    """
+    Helper function to get the active dataset path from the multi-dataset session.
+    This should be used instead of request.session.get("dataset_path") everywhere.
+    
+    Returns:
+        tuple: (supabase_path, display_name) or (None, None) if no dataset found
+    """
+    datasets_info = request.session.get('datasets', [])
+    active_index = request.session.get('active_dataset_index', 0)
+    
+    if not datasets_info:
+        # Fallback to old single-dataset system for backward compatibility
+        old_path = request.session.get('current_dataset_path')
+        old_name = request.session.get('dataset_display_name', 'Dataset')
+        return old_path, old_name
+    
+    if 0 <= active_index < len(datasets_info):
+        active_dataset = datasets_info[active_index]
+        return active_dataset['supabase_path'], active_dataset['display_name']
+    
+    return None, None
+
 def cleanup_session_data_from_supabase(session):
     """Delete all session-related data from Supabase storage"""
     try:
@@ -569,9 +592,11 @@ def switch_dataset(request, dataset_index):
     
     if 0 <= dataset_index < len(datasets_info):
         request.session['active_dataset_index'] = dataset_index
+        active_dataset = datasets_info[dataset_index]
+        # Update backward compatibility key
+        request.session['current_dataset_path'] = active_dataset['supabase_path']
         request.session.modified = True
         
-        active_dataset = datasets_info[dataset_index]
         print(f"   ✅ Switched to: {active_dataset['display_name']}")
         
         return JsonResponse({
@@ -1157,9 +1182,11 @@ def auto_visualize_dataset(request):
         request.session['auto_viz_processing'] = True
         request.session.modified = True
         
-        path_in_bucket = request.session.get("dataset_path")
+        # Use the active dataset from multi-dataset system
+        path_in_bucket, display_name = get_active_dataset_path(request)
         
-        print(f"DEBUG - Auto-visualize called with dataset_path: {path_in_bucket}")
+        print(f"DEBUG - Auto-visualize called with active dataset: {display_name}")
+        print(f"DEBUG - Active dataset path: {path_in_bucket}")
         print(f"DEBUG - Session keys: {list(request.session.keys())}")
         
         if not path_in_bucket:
@@ -1459,9 +1486,12 @@ def generate_chart_image(chart_type, x_data, y_data, title):
 
 
 def dataset_preview(request, dataset_name):
-    path_in_bucket = request.session.get("dataset_path")
-    display_name = request.session.get("dataset_display_name", dataset_name)  # fallback
-    print(f"DEBUG: Preview session dataset_path: {path_in_bucket}")  # DEBUG
+    # Use active dataset from multi-dataset system
+    path_in_bucket, display_name = get_active_dataset_path(request)
+    if not display_name:
+        display_name = dataset_name  # fallback
+    print(f"DEBUG: Preview active dataset: {display_name}")  # DEBUG
+    print(f"DEBUG: Preview dataset path: {path_in_bucket}")  # DEBUG
 
     if not path_in_bucket:
         messages.error(request, "No dataset in session.")
@@ -1515,8 +1545,10 @@ def dataset_preview(request, dataset_name):
 
 
 def full_dataset(request):
-    path_in_bucket = request.session.get("dataset_path")
-    print(f"DEBUG: full_dataset session path: {path_in_bucket}")  # DEBUG
+    # Use the active dataset from multi-dataset system
+    path_in_bucket, display_name = get_active_dataset_path(request)
+    print(f"DEBUG: full_dataset active dataset: {display_name}")  # DEBUG
+    print(f"DEBUG: full_dataset path: {path_in_bucket}")  # DEBUG
 
     if not path_in_bucket:
         return JsonResponse({"error": "No dataset in session."}, status=400)
@@ -1664,8 +1696,10 @@ def run_query(request, dataset_name):
     else:
         user_input = request.POST.get("query")
     
-    path_in_bucket = request.session.get("dataset_path")
-    print(f"DEBUG: run_query session dataset_path: {path_in_bucket}")
+    # Use active dataset from multi-dataset system
+    path_in_bucket, display_name = get_active_dataset_path(request)
+    print(f"DEBUG: run_query active dataset: {display_name}")
+    print(f"DEBUG: run_query dataset path: {path_in_bucket}")
 
     if not path_in_bucket:
         return JsonResponse({
@@ -3560,20 +3594,16 @@ def advanced_visualization_builder(request, dataset_name=None):
     try:
         # Debug session info
         print(f"DEBUG: Session keys: {list(request.session.keys())}")
-        print(f"DEBUG: Session dataset_path: {request.session.get('dataset_path')}")
-        print(f"DEBUG: Session dataset_display_name: {request.session.get('dataset_display_name')}")
+        print(f"DEBUG: Session datasets: {request.session.get('datasets', [])}")
+        print(f"DEBUG: Active dataset index: {request.session.get('active_dataset_index', 0)}")
         print(f"DEBUG: Session ID: {request.session.session_key}")
         
-        # Get dataset information
-        dataset_path = request.session.get("dataset_path")
+        # Get dataset information from active dataset
+        dataset_path, dataset_display_name = get_active_dataset_path(request)
         if not dataset_path:
-            print("DEBUG: No dataset_path found in session")
-            # Try to refresh session data
-            request.session.cycle_key()
-            dataset_path = request.session.get("dataset_path")
-            if not dataset_path:
-                messages.error(request, "No dataset found. Please upload a dataset first.")
-                return redirect("index")
+            print("DEBUG: No active dataset found in session")
+            messages.error(request, "No dataset found. Please upload a dataset first.")
+            return redirect("index")
         
         # Load dataset from Supabase
         try:
@@ -3604,8 +3634,8 @@ def advanced_visualization_builder(request, dataset_name=None):
         sample_data = df.head(10).to_dict('records')
         
         context = {
-            'dataset_name': request.session.get("dataset_display_name", "Dataset"),
-            'dataset_internal_name': request.session.get("dataset_path", "").split('/')[-1] if request.session.get("dataset_path") else "",
+            'dataset_name': dataset_display_name,
+            'dataset_internal_name': dataset_path.split('/')[-1] if dataset_path else "",
             'columns': all_columns,
             'numeric_columns': numeric_columns,
             'categorical_columns': categorical_columns,
@@ -3645,14 +3675,15 @@ def generate_advanced_chart(request):
         print(f"Chart type: {chart_type}")
         print(f"Chart config: {chart_config}")
         
-        # Load dataset
-        dataset_path = request.session.get("dataset_path")
+        # Load dataset from active dataset
+        dataset_path, display_name = get_active_dataset_path(request)
         print(f"DEBUG: Session keys: {list(request.session.keys())}")
-        print(f"DEBUG: Dataset path from session: {dataset_path}")
+        print(f"DEBUG: Active dataset: {display_name}")
+        print(f"DEBUG: Active dataset path: {dataset_path}")
         print(f"DEBUG: Session ID: {request.session.session_key}")
         
         if not dataset_path:
-            print("DEBUG: No dataset_path found in session")
+            print("DEBUG: No active dataset found in session")
             return JsonResponse({'error': 'No dataset found in session. Please upload a dataset first.'})
         
         try:
@@ -4430,8 +4461,8 @@ def get_column_values(request):
         if not column_name:
             return JsonResponse({'error': 'Column name is required'})
         
-        # Load dataset
-        dataset_path = request.session.get("dataset_path")
+        # Load dataset from active dataset
+        dataset_path, display_name = get_active_dataset_path(request)
         if not dataset_path:
             return JsonResponse({'error': 'No dataset found'})
         
@@ -4461,3 +4492,35 @@ def debug_session(request):
         'dataset_display_name': request.session.get('dataset_display_name'),
     }
     return render(request, 'session_debug.html', context)
+
+
+def transcribe_audio(request):
+    """Transcribe audio using Groq Whisper API"""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
+
+    try:
+        # Get the audio file from the POST request
+        audio_file = request.FILES.get('audio')
+        if not audio_file:
+            return JsonResponse({'status': 'error', 'message': 'No audio file received'}, status=400)
+
+        print(f"🎤 Transcribing audio file: {audio_file.name}, size: {audio_file.size} bytes")
+
+        # Use the Groq client to transcribe
+        # We must send the file with a name, so we use a tuple
+        transcription = client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=("audio.webm", audio_file.read(), audio_file.content_type)
+        )
+
+        print(f"✅ Transcription successful: {transcription.text}")
+
+        return JsonResponse({
+            'status': 'success',
+            'text': transcription.text
+        })
+
+    except Exception as e:
+        print(f"❌ Transcription error: {e}")
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
