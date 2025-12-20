@@ -517,6 +517,48 @@
             </div>
         </div>
         <div class="form-group">
+            <label>Stacked</label>
+            <select class="form-control" id="stacked">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Orientation</label>
+            <select class="form-control" id="horizontal">
+                <option value="false">Vertical</option>
+                <option value="true">Horizontal</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Bar Width</label>
+            <input type="number" class="form-control" id="barWidth" value="0.8" min="0.1" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Alpha (Transparency)</label>
+            <input type="number" class="form-control" id="alpha" value="0.8" min="0.05" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Edge Color</label>
+            <input type="color" class="form-control" id="edgeColor" value="#000000">
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="0" min="0" max="10" step="0.5">
+        </div>
+        <div class="form-group">
+            <label>Legend Position</label>
+            <select class="form-control" id="legendPosition">
+                <option value="best">Best</option>
+                <option value="top">Top</option>
+                <option value="upper right">Upper Right</option>
+                <option value="upper left">Upper Left</option>
+                <option value="lower right">Lower Right</option>
+                <option value="lower left">Lower Left</option>
+                <option value="none">None</option>
+            </select>
+        </div>
+        <div class="form-group">
             <label>Chart Title</label>
             <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
         </div>
@@ -539,6 +581,53 @@
                 <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
                 {% endfor %}
             </div>
+        </div>
+        <div class="form-group">
+            <label>Show Markers</label>
+            <select class="form-control" id="markers">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Marker Style</label>
+            <select class="form-control" id="marker">
+                <option value="o">Circle (o)</option>
+                <option value="s">Square (s)</option>
+                <option value="^">Triangle (^)</option>
+                <option value="D">Diamond (D)</option>
+                <option value="x">X (x)</option>
+                <option value="+">Plus (+)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Line Style</label>
+            <select class="form-control" id="lineStyle">
+                <option value="-">Solid (-)</option>
+                <option value="--">Dashed (--)</option>
+                <option value=":">Dotted (:)</option>
+                <option value="-.">Dash-dot (-.)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="2" min="0.5" max="10" step="0.5">
+        </div>
+        <div class="form-group">
+            <label>Alpha (Transparency)</label>
+            <input type="number" class="form-control" id="alpha" value="1" min="0.1" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Legend Position</label>
+            <select class="form-control" id="legendPosition">
+                <option value="best">Best</option>
+                <option value="top">Top</option>
+                <option value="upper right">Upper Right</option>
+                <option value="upper left">Upper Left</option>
+                <option value="lower right">Lower Right</option>
+                <option value="lower left">Lower Left</option>
+                <option value="none">None</option>
+            </select>
         </div>
         <div class="form-group">
             <label>Chart Title</label>
@@ -574,6 +663,89 @@
             </select>
         </div>
         <div class="form-group">
+            <label>Style By (Optional)</label>
+            <select class="form-control" id="styleColumn">
+                <option value="">None</option>
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Size Mapping (Optional)</label>
+            <select class="form-control" id="sizeColumn">
+                <option value="">None</option>
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Point Size</label>
+            <input type="number" class="form-control" id="pointSize" value="60" min="1" max="500">
+        </div>
+        <div class="form-group">
+            <label>Marker</label>
+            <select class="form-control" id="marker">
+                <option value="o">Circle (o)</option>
+                <option value="s">Square (s)</option>
+                <option value="^">Triangle (^)</option>
+                <option value="D">Diamond (D)</option>
+                <option value="x">X (x)</option>
+                <option value="+">Plus (+)</option>
+                <option value="P">Plus (Filled P)</option>
+                <option value="X">X (Filled X)</option>
+                <option value="h">Hexagon (h)</option>
+                <option value="*">Star (*)</option>
+                <option value=".">Point (.)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Alpha (Transparency)</label>
+            <input type="number" class="form-control" id="alpha" value="0.7" min="0.05" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Edge Color</label>
+            <input type="color" class="form-control" id="edgeColor" value="#000000">
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="0" min="0" max="10" step="0.5">
+        </div>
+        <div class="form-group">
+            <label>Color Array Mapping (Optional)</label>
+            <select class="form-control" id="colorArrayColumn">
+                <option value="">None</option>
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Colormap (for Color Array)</label>
+            <select class="form-control" id="colormap">
+                <option value="viridis">Viridis</option>
+                <option value="plasma">Plasma</option>
+                <option value="inferno">Inferno</option>
+                <option value="magma">Magma</option>
+                <option value="cividis">Cividis</option>
+                <option value="coolwarm">Coolwarm</option>
+                <option value="turbo">Turbo</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Legend Position</label>
+            <select class="form-control" id="legendPosition">
+                <option value="best">Best</option>
+                <option value="top">Top</option>
+                <option value="upper right">Upper Right</option>
+                <option value="upper left">Upper Left</option>
+                <option value="lower right">Lower Right</option>
+                <option value="lower left">Lower Left</option>
+                <option value="none">None</option>
+            </select>
+        </div>
+        <div class="form-group">
             <label>Chart Title</label>
             <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
         </div>
@@ -592,6 +764,37 @@
         <div class="form-group">
             <label>Number of Bins</label>
             <input type="number" class="form-control" id="bins" value="30" min="5" max="100">
+        </div>
+        <div class="form-group">
+            <label>Density</label>
+            <select class="form-control" id="density">
+                <option value="false">Frequency</option>
+                <option value="true">Density</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Alpha (Transparency)</label>
+            <input type="number" class="form-control" id="alpha" value="0.7" min="0.05" max="1" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Edge Color</label>
+            <input type="color" class="form-control" id="edgeColor" value="#000000">
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="0" min="0" max="10" step="0.5">
+        </div>
+        <div class="form-group">
+            <label>Legend Position</label>
+            <select class="form-control" id="legendPosition">
+                <option value="best">Best</option>
+                <option value="top">Top</option>
+                <option value="upper right">Upper Right</option>
+                <option value="upper left">Upper Left</option>
+                <option value="lower right">Lower Right</option>
+                <option value="lower left">Lower Left</option>
+                <option value="none">None</option>
+            </select>
         </div>
         <div class="form-group">
             <label>Chart Title</label>
@@ -619,6 +822,24 @@
             </select>
         </div>
         <div class="form-group">
+            <label>Notch</label>
+            <select class="form-control" id="notch">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Show Outliers</label>
+            <select class="form-control" id="showFliers">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="1" min="0" max="10" step="0.5">
+        </div>
+        <div class="form-group">
             <label>Chart Title</label>
             <input type="text" class="form-control" id="chartTitle" placeholder="Enter chart title">
         </div>
@@ -635,12 +856,94 @@
             </select>
         </div>
         <div class="form-group">
+            <label>Pie Type</label>
+            <select class="form-control" id="pieType">
+                <option value="simple">Simple (single category)</option>
+                <option value="grouped">Grouped (category vs category)</option>
+                <option value="values">Values (numeric column)</option>
+            </select>
+        </div>
+        <div class="form-group">
             <label>Value Column (Optional)</label>
             <select class="form-control" id="valueColumn">
                 <option value="">Count of records</option>
                 {% for column in numeric_columns %}
                 <option value="{{ column }}">{{ column }}</option>
                 {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Group By (for Grouped)</label>
+            <select class="form-control" id="groupByColumn">
+                <option value="">None</option>
+                {% for column in categorical_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Aggregation Method</label>
+            <select class="form-control" id="aggregationMethod">
+                <option value="count">Count</option>
+                <option value="percentage">Percentage (top combinations)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Specific Group (optional)</label>
+            <select class="form-control" id="specificGroup">
+                <option value="">None</option>
+            </select>
+            <small style="color: #888; display: block; margin-top: 6px;">Select a value from the Group By column</small>
+        </div>
+        <div class="form-group">
+            <label>Values Column (for Values type)</label>
+            <select class="form-control" id="valuesColumn">
+                <option value="">None</option>
+                {% for column in numeric_columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Labels Column (optional for Values type)</label>
+            <select class="form-control" id="labelsColumn">
+                <option value="">None</option>
+                {% for column in columns %}
+                <option value="{{ column }}">{{ column }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Max Slices</label>
+            <input type="number" class="form-control" id="maxSlices" value="8" min="3" max="20">
+        </div>
+        <div class="form-group">
+            <label>Donut Style</label>
+            <select class="form-control" id="donut">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Explode Factor (0-0.3)</label>
+            <input type="number" class="form-control" id="explode" value="0" min="0" max="0.3" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>Show Legend</label>
+            <select class="form-control" id="showLegend">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Legend Position</label>
+            <select class="form-control" id="legendPosition">
+                <option value="best">Best</option>
+                <option value="top">Top</option>
+                <option value="upper right">Upper Right</option>
+                <option value="upper left">Upper Left</option>
+                <option value="lower right">Lower Right</option>
+                <option value="lower left">Lower Left</option>
             </select>
         </div>
         <div class="form-group">
@@ -658,6 +961,40 @@
                 <div class="multi-select-item" data-value="{{ column }}">{{ column }}</div>
                 {% endfor %}
             </div>
+        </div>
+        <div class="form-group">
+            <label>Colormap</label>
+            <select class="form-control" id="colormap">
+                <option value="viridis">Viridis</option>
+                <option value="plasma">Plasma</option>
+                <option value="inferno">Inferno</option>
+                <option value="magma">Magma</option>
+                <option value="cividis">Cividis</option>
+                <option value="coolwarm">Coolwarm</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Annotate Cells</label>
+            <select class="form-control" id="annot">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Annotation Format</label>
+            <input type="text" class="form-control" id="fmt" value=".2f">
+        </div>
+        <div class="form-group">
+            <label>Line Widths</label>
+            <input type="number" class="form-control" id="lineWidth" value="0" min="0" max="5" step="0.5">
+        </div>
+        <div class="form-group">
+            <label>Line Color</label>
+            <input type="color" class="form-control" id="lineColor" value="#000000">
+        </div>
+        <div class="form-group">
+            <label>Center (Optional)</label>
+            <input type="number" class="form-control" id="center" placeholder="e.g., 0">
         </div>
         <div class="form-group">
             <label>Chart Title</label>
@@ -683,6 +1020,39 @@
                 <option value="{{ column }}">{{ column }}</option>
                 {% endfor %}
             </select>
+        </div>
+        <div class="form-group">
+            <label>Inner</label>
+            <select class="form-control" id="inner">
+                <option value="box">Box</option>
+                <option value="quartiles">Quartiles</option>
+                <option value="point">Point</option>
+                <option value="stick">Stick</option>
+                <option value="none">None</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Split by Hue</label>
+            <select class="form-control" id="split">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Scale</label>
+            <select class="form-control" id="scale">
+                <option value="area">Area</option>
+                <option value="count">Count</option>
+                <option value="width">Width</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Bandwidth (bw)</label>
+            <input type="number" class="form-control" id="bw" value="" min="0" step="0.1" placeholder="auto">
+        </div>
+        <div class="form-group">
+            <label>Line Width</label>
+            <input type="number" class="form-control" id="lineWidth" value="1" min="0" max="10" step="0.5">
         </div>
         <div class="form-group">
             <label>Chart Title</label>
@@ -758,10 +1128,54 @@
                 configPanel.innerHTML = template.innerHTML;
                 setupMultiSelect();
                 console.log('Configuration loaded successfully');
+                // Additional setup for pie chart grouped mode
+                if (chartType === 'pie') {
+                    const groupBySelect = document.getElementById('groupByColumn');
+                    if (groupBySelect) {
+                        groupBySelect.addEventListener('change', function() {
+                            populateSpecificGroupOptions(this.value);
+                        });
+                    }
+                    // Initialize if a value is preselected
+                    if (groupBySelect && groupBySelect.value) {
+                        populateSpecificGroupOptions(groupBySelect.value);
+                    }
+                }
             } else {
                 configPanel.innerHTML = '<p class="chart-placeholder">Configuration not available for this chart type</p>';
                 console.error('Template not found for:', chartType);
             }
+        }
+
+        function populateSpecificGroupOptions(columnName) {
+            const specificGroupSelect = document.getElementById('specificGroup');
+            if (!specificGroupSelect) return;
+            // Reset options
+            specificGroupSelect.innerHTML = '<option value="">None</option>';
+            if (!columnName) return;
+            // Fetch unique values for selected column
+            fetch('/get_column_values/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ column: columnName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.values && Array.isArray(data.values)) {
+                    data.values.forEach(val => {
+                        const opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val;
+                        specificGroupSelect.appendChild(opt);
+                    });
+                }
+            })
+            .catch(err => {
+                console.error('Failed to load unique values:', err);
+            });
         }
 
         function setupMultiSelect() {
@@ -807,35 +1221,96 @@
             // Chart-specific configuration
             switch(currentChartType) {
                 case 'bar':
+                    config.x_column = getFormValue('xColumn');
+                    config.y_columns = getSelectedValues('yColumns');
+                    config.stacked = (getFormValue('stacked') || 'false') === 'true';
+                    config.horizontal = (getFormValue('horizontal') || 'false') === 'true';
+                    config.alpha = parseFloat(getFormValue('alpha')) || 0.8;
+                    config.edge_color = getFormValue('edgeColor') || '#000000';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 0;
+                    config.bar_width = parseFloat(getFormValue('barWidth')) || 0.8;
+                    config.legend_position = getFormValue('legendPosition') || 'best';
+                    break;
                 case 'line':
                     config.x_column = getFormValue('xColumn');
                     config.y_columns = getSelectedValues('yColumns');
+                    config.markers = (getFormValue('markers') || 'true') === 'true';
+                    config.marker = getFormValue('marker') || 'o';
+                    config.line_style = getFormValue('lineStyle') || '-';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 2;
+                    config.alpha = parseFloat(getFormValue('alpha')) || 1;
+                    config.legend_position = getFormValue('legendPosition') || 'best';
                     break;
                     
                 case 'scatter':
                     config.x_column = getFormValue('xColumn');
                     config.y_column = getFormValue('yColumn');
                     config.hue_column = getFormValue('hueColumn');
+                    config.style_column = getFormValue('styleColumn');
+                    config.size_column = getFormValue('sizeColumn');
+                    config.point_size = parseFloat(getFormValue('pointSize')) || 60;
+                    config.marker = getFormValue('marker') || 'o';
+                    config.alpha = parseFloat(getFormValue('alpha')) || 0.7;
+                    config.edge_color = getFormValue('edgeColor') || '#000000';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 0;
+                    config.color_array_column = getFormValue('colorArrayColumn');
+                    config.colormap = getFormValue('colormap') || 'viridis';
+                    config.legend_position = getFormValue('legendPosition') || 'best';
                     break;
                     
                 case 'histogram':
                     config.columns = getSelectedValues('histogramColumns');
                     config.bins = parseInt(getFormValue('bins')) || 30;
+                    config.density = (getFormValue('density') || 'false') === 'true';
+                    config.alpha = parseFloat(getFormValue('alpha')) || 0.7;
+                    config.edge_color = getFormValue('edgeColor') || '#000000';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 0;
+                    config.legend_position = getFormValue('legendPosition') || 'best';
                     break;
                     
                 case 'box':
+                    config.y_columns = getSelectedValues('yColumns');
+                    config.x_column = getFormValue('xColumn');
+                    config.notch = (getFormValue('notch') || 'false') === 'true';
+                    config.show_fliers = (getFormValue('showFliers') || 'true') === 'true';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 1;
+                    break;
                 case 'violin':
                     config.y_columns = getSelectedValues('yColumns');
                     config.x_column = getFormValue('xColumn');
+                    config.inner = getFormValue('inner') || 'box';
+                    config.split = (getFormValue('split') || 'false') === 'true';
+                    config.scale = getFormValue('scale') || 'area';
+                    config.bw = getFormValue('bw') ? parseFloat(getFormValue('bw')) : null;
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 1;
                     break;
                     
                 case 'pie':
                     config.category_column = getFormValue('categoryColumn');
                     config.value_column = getFormValue('valueColumn');
+                    config.chart_subtype = getFormValue('pieType') || 'simple';
+                    // Grouped options
+                    config.group_by_column = getFormValue('groupByColumn');
+                    config.aggregation_method = getFormValue('aggregationMethod') || 'count';
+                    config.specific_group = getFormValue('specificGroup');
+                    // Values mode options
+                    config.values_column = getFormValue('valuesColumn');
+                    config.labels_column = getFormValue('labelsColumn');
+                    config.max_slices = parseInt(getFormValue('maxSlices')) || 8;
+                    config.donut = (getFormValue('donut') || 'false') === 'true';
+                    config.explode = parseFloat(getFormValue('explode')) || 0;
+                    config.show_legend = (getFormValue('showLegend') || 'true') === 'true';
+                    config.legend_position = getFormValue('legendPosition') || 'best';
                     break;
                     
                 case 'heatmap':
                     config.columns = getSelectedValues('heatmapColumns');
+                    config.colormap = getFormValue('colormap') || 'viridis';
+                    config.annot = (getFormValue('annot') || 'false') === 'true';
+                    config.fmt = getFormValue('fmt') || '.2f';
+                    config.line_width = parseFloat(getFormValue('lineWidth')) || 0;
+                    config.line_color = getFormValue('lineColor') || '#000000';
+                    config.center = getFormValue('center') ? parseFloat(getFormValue('center')) : null;
                     break;
             }
 

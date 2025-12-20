@@ -4089,11 +4089,31 @@ def generate_advanced_chart(request):
         
         # Process configuration for specific chart types
         if chart_type == 'pie':
-            # Map new template fields to expected pie chart config fields
-            chart_config['simple_column'] = chart_config.get('category_column')
-            chart_config['chart_subtype'] = 'simple'  # Default to simple pie chart
-            if chart_config.get('value_column'):
-                chart_config['value_column'] = chart_config.get('value_column')
+            # Determine subtype if not explicitly provided
+            subtype = chart_config.get('chart_subtype')
+            if not subtype:
+                if chart_config.get('group_by_column') and chart_config.get('category_column'):
+                    subtype = 'grouped'
+                elif chart_config.get('values_column'):
+                    subtype = 'values'
+                else:
+                    subtype = 'simple'
+            chart_config['chart_subtype'] = subtype
+
+            if subtype == 'simple':
+                chart_config['simple_column'] = chart_config.get('category_column')
+                # Optional value column for sum by category
+                if chart_config.get('value_column'):
+                    chart_config['value_column'] = chart_config.get('value_column')
+            elif subtype == 'grouped':
+                # Expect 'group_by_column' and 'category_column'
+                chart_config['group_by_column'] = chart_config.get('group_by_column')
+                chart_config['category_column'] = chart_config.get('category_column')
+                chart_config['aggregation_method'] = chart_config.get('aggregation_method', 'count')
+                chart_config['specific_group'] = chart_config.get('specific_group')
+            elif subtype == 'values':
+                chart_config['values_column'] = chart_config.get('values_column')
+                chart_config['labels_column'] = chart_config.get('labels_column')
         
         # Create figure
         plt.figure(figsize=(12, 8))
@@ -4180,6 +4200,10 @@ def generate_bar_chart(df, config):
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
         stacked = config.get('stacked', False)
         horizontal = config.get('horizontal', False)
+        alpha = float(config.get('alpha', 0.8))
+        edge_color = config.get('edge_color') or None
+        line_width = float(config.get('line_width', 0))
+        bar_width = float(config.get('bar_width', 0.8))
         
         if not x_col or not y_cols:
             raise ValueError("X column and Y columns are required")
@@ -4192,39 +4216,49 @@ def generate_bar_chart(df, config):
                 x_data = grouped_df[x_col]
                 y_data = grouped_df[y_cols[0]]
                 
+                color = sns.color_palette(color_palette, 1)[0]
                 if horizontal:
-                    plt.barh(x_data, y_data, color=sns.color_palette(color_palette, 1)[0])
+                    plt.barh(x_data, y_data, color=color, alpha=alpha, edgecolor=edge_color, linewidth=line_width, height=bar_width)
                     plt.xlabel(y_cols[0])
                     plt.ylabel(x_col)
                 else:
-                    plt.bar(x_data, y_data, color=sns.color_palette(color_palette, 1)[0])
+                    plt.bar(x_data, y_data, color=color, alpha=alpha, edgecolor=edge_color, linewidth=line_width, width=bar_width)
                     plt.xlabel(x_col)
                     plt.ylabel(y_cols[0])
             else:
                 # Multiple y columns
                 grouped_df = df.groupby(x_col)[y_cols].sum()
                 
-                if stacked:
-                    grouped_df.plot(kind='barh' if horizontal else 'bar', 
-                                  stacked=True, 
-                                  color=sns.color_palette(color_palette, len(y_cols)),
-                                  ax=plt.gca())
-                else:
-                    grouped_df.plot(kind='barh' if horizontal else 'bar', 
-                                  color=sns.color_palette(color_palette, len(y_cols)),
-                                  ax=plt.gca())
+                colors = sns.color_palette(color_palette, len(y_cols))
+                ax = plt.gca()
+                grouped_df.plot(kind='barh' if horizontal else 'bar',
+                                 stacked=stacked,
+                                 color=colors,
+                                 ax=ax,
+                                 alpha=alpha)
+                # Apply edgecolor/linewidth to bars
+                for patch in ax.patches:
+                    if edge_color is not None:
+                        patch.set_edgecolor(edge_color)
+                    patch.set_linewidth(line_width)
         else:
             # Numeric x column
             for i, y_col in enumerate(y_cols):
                 color = sns.color_palette(color_palette, len(y_cols))[i]
                 if horizontal:
-                    plt.barh(df[x_col], df[y_col], alpha=0.7, label=y_col, color=color)
+                    plt.barh(df[x_col], df[y_col], alpha=alpha, label=y_col, color=color, edgecolor=edge_color, linewidth=line_width, height=bar_width)
                 else:
-                    plt.bar(df[x_col], df[y_col], alpha=0.7, label=y_col, color=color)
+                    plt.bar(df[x_col], df[y_col], alpha=alpha, label=y_col, color=color, edgecolor=edge_color, linewidth=line_width, width=bar_width)
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xticks(rotation=45)
-        plt.legend()
+        # Legend positioning
+        legend_pos = config.get('legend_position', 'best')
+        if legend_pos and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.tight_layout()
         
         # Convert to base64
@@ -4257,7 +4291,10 @@ def generate_line_chart(df, config):
         title = config.get('title', 'Line Chart')
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
         markers = config.get('markers', True)
+        marker = config.get('marker', 'o')
         line_style = config.get('line_style', '-')
+        line_width = float(config.get('line_width', 2))
+        alpha = float(config.get('alpha', 1))
         
         if not x_col or not y_cols:
             raise ValueError("X column and Y columns are required")
@@ -4266,18 +4303,24 @@ def generate_line_chart(df, config):
         
         for i, y_col in enumerate(y_cols):
             if markers:
-                plt.plot(df[x_col], df[y_col], marker='o', 
+                plt.plot(df[x_col], df[y_col], marker=marker,
                         linestyle=line_style, color=colors[i], 
-                        label=y_col, linewidth=2, markersize=4)
+                        label=y_col, linewidth=line_width, markersize=4, alpha=alpha)
             else:
                 plt.plot(df[x_col], df[y_col], 
                         linestyle=line_style, color=colors[i], 
-                        label=y_col, linewidth=2)
+                        label=y_col, linewidth=line_width, alpha=alpha)
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel(x_col)
         plt.ylabel(' / '.join(y_cols))
-        plt.legend()
+        # Legend positioning
+        legend_pos = config.get('legend_position', 'best')
+        if legend_pos and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.xticks(rotation=45)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
@@ -4314,18 +4357,74 @@ def generate_scatter_chart(df, config):
         style_col = config.get('style_column')
         title = config.get('title', 'Scatter Plot')
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        marker = config.get('marker', 'o')
+        alpha = float(config.get('alpha', 0.7))
+        edge_color = config.get('edge_color') or '#000000'
+        line_width = float(config.get('line_width', 0))
+        point_size = float(config.get('point_size', 60))
+        color_array_col = config.get('color_array_column')
+        colormap = config.get('colormap', 'viridis')
         
         if not x_col or not y_col:
             raise ValueError("X and Y columns are required")
         
         # Create scatter plot
-        sns.scatterplot(data=df, x=x_col, y=y_col, 
-                       hue=hue_col, size=size_col, style=style_col,
-                       palette=color_palette, alpha=0.7, s=60)
+        if color_array_col:
+            # Use Matplotlib to map numeric values to colors via colormap
+            x_vals = df[x_col]
+            y_vals = df[y_col]
+            c_vals = df[color_array_col]
+            # Handle sizes: column-based or constant
+            if size_col:
+                # Normalize size column to a reasonable range
+                sizes = df[size_col].astype(float)
+                # Avoid negative/zero sizes
+                sizes = sizes.clip(lower=1)
+                # Scale sizes to around the requested point_size
+                scale = point_size / (sizes.mean() if sizes.mean() != 0 else 1.0)
+                s_param = sizes * scale
+            else:
+                s_param = point_size
+
+            plt.scatter(x_vals, y_vals, c=c_vals, cmap=colormap,
+                        s=s_param, marker=marker, alpha=alpha,
+                        edgecolors=edge_color, linewidths=line_width)
+        else:
+            # Use Seaborn with hue/style/size mapping and palette
+            scatter_kwargs = {
+                'data': df,
+                'x': x_col,
+                'y': y_col,
+                'hue': hue_col,
+                'style': style_col,
+                'palette': color_palette,
+                'alpha': alpha,
+                'marker': marker,
+                'edgecolor': edge_color,
+                'linewidth': line_width
+            }
+            if size_col:
+                scatter_kwargs['size'] = size_col
+            else:
+                scatter_kwargs['s'] = point_size
+
+            sns.scatterplot(**scatter_kwargs)
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel(x_col)
         plt.ylabel(y_col)
+        # Legend repositioning/hiding for seaborn legends
+        legend_pos = config.get('legend_position', 'best')
+        ax = plt.gca()
+        leg = ax.get_legend()
+        if legend_pos == 'none':
+            if leg:
+                leg.remove()
+        elif leg:
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.tight_layout()
         
         # Convert to base64
@@ -4357,6 +4456,9 @@ def generate_histogram_chart(df, config):
         title = config.get('title', 'Histogram')
         bins = config.get('bins', 30)
         density = config.get('density', False)
+        alpha = float(config.get('alpha', 0.7))
+        edge_color = config.get('edge_color') or None
+        line_width = float(config.get('line_width', 0))
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
         
         if not columns:
@@ -4365,13 +4467,20 @@ def generate_histogram_chart(df, config):
         colors = sns.color_palette(color_palette, len(columns))
         
         for i, col in enumerate(columns):
-            plt.hist(df[col].dropna(), bins=bins, alpha=0.7, 
-                    label=col, color=colors[i], density=density)
+                plt.hist(df[col].dropna(), bins=bins, alpha=alpha, 
+                    label=col, color=colors[i], density=density,
+                    edgecolor=edge_color, linewidth=line_width)
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel('Value')
         plt.ylabel('Density' if density else 'Frequency')
-        plt.legend()
+        # Legend positioning
+        legend_pos = config.get('legend_position', 'best')
+        if legend_pos and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         
@@ -4404,6 +4513,9 @@ def generate_box_chart(df, config):
         x_col = config.get('x_column')  # Optional grouping column
         title = config.get('title', 'Box Plot')
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        notch = config.get('notch', False)
+        show_fliers = config.get('show_fliers', True)
+        line_width = float(config.get('line_width', 1))
         
         if not y_cols:
             raise ValueError("At least one Y column is required")
@@ -4411,13 +4523,24 @@ def generate_box_chart(df, config):
         if x_col:
             # Grouped box plot
             for y_col in y_cols:
-                sns.boxplot(data=df, x=x_col, y=y_col, palette=color_palette)
+                sns.boxplot(data=df, x=x_col, y=y_col, palette=color_palette, showfliers=show_fliers)
+                for artist in plt.gca().artists:
+                    artist.set_linewidth(line_width)
                 plt.xticks(rotation=45)
         else:
             # Simple box plot
             data_to_plot = [df[col].dropna() for col in y_cols]
-            plt.boxplot(data_to_plot, labels=y_cols, patch_artist=True,
-                       boxprops=dict(facecolor=sns.color_palette(color_palette, 1)[0]))
+            plt.boxplot(
+                data_to_plot,
+                labels=y_cols,
+                patch_artist=True,
+                notch=notch,
+                showfliers=show_fliers,
+                boxprops=dict(facecolor=sns.color_palette(color_palette, 1)[0], linewidth=line_width),
+                whiskerprops=dict(linewidth=line_width),
+                capprops=dict(linewidth=line_width),
+                medianprops=dict(linewidth=line_width)
+            )
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.tight_layout()
@@ -4451,6 +4574,8 @@ def generate_pie_chart(df, config):
         title = config.get('title', 'Pie Chart')
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
         max_slices = config.get('max_slices', 8)
+        donut = config.get('donut', False)
+        explode_factor = float(config.get('explode', 0))
         
         # Debug logging
         print(f"Pie chart subtype: {chart_subtype}")
@@ -4597,9 +4722,17 @@ def generate_pie_chart(df, config):
         colors = sns.color_palette(color_palette, len(values))
         
         # Create pie chart
-        wedges, texts, autotexts = plt.pie(values, labels=labels, autopct='%1.1f%%', 
-                                          startangle=90, colors=colors, 
-                                          textprops={'fontsize': 10, 'color': 'white'})
+        explode = [explode_factor] * len(values) if explode_factor > 0 else None
+        wedges, texts, autotexts = plt.pie(
+            values,
+            labels=labels,
+            autopct='%1.1f%%',
+            startangle=90,
+            colors=colors,
+            textprops={'fontsize': 10, 'color': 'white'},
+            explode=explode,
+            wedgeprops={'width': 0.4} if donut else None
+        )
         
         # Improve text visibility
         for autotext in autotexts:
@@ -4614,10 +4747,14 @@ def generate_pie_chart(df, config):
         plt.title(title, fontsize=16, fontweight='bold', color='white', pad=20)
         plt.axis('equal')
         
-        # Add legend if many slices
-        if len(labels) > 6:
-            plt.legend(wedges, labels, title="Categories", loc="center left", 
-                      bbox_to_anchor=(1, 0, 0.5, 1), fontsize=10)
+        # Legend handling based on config
+        show_legend = bool(config.get('show_legend', True))
+        legend_pos = config.get('legend_position', 'best')
+        if show_legend and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(wedges, labels, title="Categories", loc='upper center', bbox_to_anchor=(0.5, 1.15), fontsize=10)
+            else:
+                plt.legend(wedges, labels, title="Categories", loc=legend_pos, fontsize=10)
         
         # Convert to base64
         buffer = BytesIO()
@@ -4647,7 +4784,13 @@ def generate_heatmap_chart(df, config):
         columns = config.get('columns', [])
         title = config.get('title', 'Heatmap')
         color_palette = config.get('palette') or config.get('color_palette', 'viridis')
-        show_values = config.get('show_values', True)
+        # Overrides from config
+        cmap = config.get('colormap', color_palette)
+        annot = bool(config.get('annot', True))
+        fmt = config.get('fmt', '.2f')
+        line_width = float(config.get('line_width', 0))
+        line_color = config.get('line_color') or 'black'
+        center = config.get('center', 0)
         
         if not columns:
             # Use all numeric columns
@@ -4659,8 +4802,16 @@ def generate_heatmap_chart(df, config):
         corr_matrix = numeric_df.corr()
         
         # Create heatmap
-        sns.heatmap(corr_matrix, annot=show_values, cmap=color_palette, 
-                   center=0, square=True, fmt='.2f')
+        sns.heatmap(
+            corr_matrix,
+            annot=annot,
+            cmap=cmap,
+            center=center,
+            square=True,
+            fmt=fmt,
+            linewidths=line_width,
+            linecolor=line_color
+        )
         
         plt.title(title, fontsize=16, fontweight='bold')
         plt.tight_layout()
@@ -4694,6 +4845,11 @@ def generate_violin_chart(df, config):
         x_col = config.get('x_column')
         title = config.get('title', 'Violin Plot')
         color_palette = config.get('palette') or config.get('color_palette', 'husl')
+        inner = config.get('inner', 'box')
+        split = bool(config.get('split', False))
+        scale = config.get('scale', 'area')
+        bw = config.get('bw', None)
+        line_width = float(config.get('line_width', 1))
         
         if not y_cols:
             raise ValueError("At least one Y column is required")
@@ -4701,12 +4857,28 @@ def generate_violin_chart(df, config):
         if x_col:
             # Grouped violin plot
             for y_col in y_cols:
-                sns.violinplot(data=df, x=x_col, y=y_col, palette=color_palette)
+                sns.violinplot(
+                    data=df,
+                    x=x_col,
+                    y=y_col,
+                    palette=color_palette,
+                    inner=inner if inner != 'none' else None,
+                    scale=scale,
+                    bw=bw,
+                    linewidth=line_width
+                )
                 plt.xticks(rotation=45)
         else:
             # Simple violin plot
             data_to_plot = [df[col].dropna() for col in y_cols]
-            sns.violinplot(data=data_to_plot, palette=color_palette)
+            sns.violinplot(
+                data=data_to_plot,
+                palette=color_palette,
+                inner=inner if inner != 'none' else None,
+                scale=scale,
+                bw=bw,
+                linewidth=line_width
+            )
             plt.xticks(range(len(y_cols)), y_cols)
         
         plt.title(title, fontsize=16, fontweight='bold')
@@ -4759,7 +4931,13 @@ def generate_area_chart(df, config):
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel(x_col)
         plt.ylabel(' / '.join(y_cols))
-        plt.legend()
+        # Legend positioning
+        legend_pos = config.get('legend_position', 'best')
+        if legend_pos and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.xticks(rotation=45)
         plt.tight_layout()
         
@@ -4803,7 +4981,13 @@ def generate_density_chart(df, config):
         plt.title(title, fontsize=16, fontweight='bold')
         plt.xlabel('Value')
         plt.ylabel('Density')
-        plt.legend()
+        # Legend positioning
+        legend_pos = config.get('legend_position', 'best')
+        if legend_pos and legend_pos != 'none':
+            if legend_pos == 'top':
+                plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15))
+            else:
+                plt.legend(loc=legend_pos)
         plt.tight_layout()
         
         # Convert to base64
