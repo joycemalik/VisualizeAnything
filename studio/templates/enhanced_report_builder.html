@@ -229,10 +229,13 @@
             color: var(--text-primary);
             text-decoration: none;
             border-radius: 0px;
-            transition: all 0.2s ease;
+            transition: background-color 0.12s ease, box-shadow 0.12s ease;
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            will-change: background-color;
         }
 
         .tool-btn.export-btn {
@@ -247,7 +250,7 @@
         .tool-btn.export-btn:hover {
             background: linear-gradient(135deg, var(--btn-primary-hover) 0%, var(--btn-primary) 100%);
             box-shadow: 0 4px 12px rgba(112, 89, 242, 0.5);
-            transform: translateY(-1px);
+            
         }
 
         .tool-btn:hover {
@@ -288,8 +291,10 @@
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
-            transition: background-color 0.2s ease;
+            transition: background-color 0.12s ease, box-shadow 0.12s ease;
             width: 100%;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .action-btn:hover {
@@ -399,7 +404,7 @@
         }
 
         .header-actions {
-            display: flex;
+            display: none; /* hidden by default; shown on mobile */
             gap: 10px;
         }
 
@@ -410,13 +415,49 @@
             color: var(--text-primary);
             border-radius: 0px;
             text-decoration: none;
-            transition: all 0.2s ease;
+            transition: background-color 0.12s ease, box-shadow 0.12s ease;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .btn-export:hover {
             background: var(--primary-color);
             border-color: var(--primary-color);
             color: white;
+        }
+
+        /* Mobile refinements */
+        @media (max-width: 768px) {
+            .content-header { padding: 12px 16px; }
+            .header-title h2 { font-size: 1rem; }
+            .content-header .header-actions { display: flex; flex-wrap: wrap; }
+            .btn-export { width: 100%; }
+
+            .content-area { margin-left: 0; }
+            .content-header { left: 0; }
+            .report-canvas { margin-top: 80px; padding: 16px; }
+            .report-page { padding: 24px; }
+        }
+
+        /* Disable hover-driven effects on touch devices to reduce jank */
+        @media (hover: none) {
+            .tool-btn:hover,
+            .action-btn:hover,
+            .control-btn:hover,
+            .btn-export:hover {
+                box-shadow: none;
+            }
+        }
+
+        /* Hide header actions on mobile when sidebar is expanded */
+        @media (max-width: 768px) {
+            .content-header:not(.sidebar-collapsed) .header-actions { display: none; }
+        }
+
+        /* Extra-tight layout for small phones */
+        @media (max-width: 480px) {
+            .report-page { padding: 16px; }
+            .header-title h2 { font-size: 0.95rem; }
         }
 
         /* Report Canvas - Updated for fixed header to match dataset_preview.html */
@@ -708,10 +749,11 @@
         /* Responsive - Enhanced for new sidebar */
         @media (max-width: 768px) {
             .sidebar {
-                width: 100%;
-                height: auto;
-                position: relative;
-                transform: none;
+                width: 85%;
+                height: 100vh;
+                position: fixed;
+                left: 0;
+                top: 0;
             }
             
             .content-area {
@@ -732,6 +774,20 @@
             }
         }
 
+        /* Mobile overlay for sidebar */
+        #overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 999;
+            pointer-events: none;
+        }
+        #overlay.active { display: block; pointer-events: auto; }
+
         /* Control buttons for sidebar toggle */
         .control-btn {
             background: var(--btn-secondary);
@@ -740,7 +796,9 @@
             padding: 8px 12px;
             border-radius: 0px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: background-color 0.12s ease, box-shadow 0.12s ease;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .control-btn:hover {
@@ -904,12 +962,20 @@
             </div>
         </div>
 
+        <!-- Mobile overlay when sidebar is open -->
+        <div id="overlay"></div>
+
         <!-- Main Content -->
         <div class="content-area">
             <div class="content-header">
-                <button class="control-btn" id="sidebarToggle" onclick="toggleSidebar()">☰</button>
+                <button class="control-btn" id="sidebarToggle">☰</button>
                 <div class="header-title">
                     <h2 style="margin: 0; color: var(--text-primary); font-size: 18px; font-weight: 600;">Report Builder</h2>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-export" onclick="saveReportState()" title="Save current report state">
+                        <i class="fas fa-save"></i> Save
+                    </button>
                 </div>
                 <div class="header-spacer"></div>
             </div>
@@ -1085,6 +1151,14 @@
     </div>
 
     <script>
+        // Reduce logging noise to improve performance
+        window.__LOG_ENABLED__ = false;
+        (function(){
+            const __origLog = console.log;
+            console.log = function(){
+                if (window.__LOG_ENABLED__) __origLog.apply(console, arguments);
+            };
+        })();
         console.log('🚀 Script loaded - starting initialization...');
         
         let quill; // Quill editor instance
@@ -1102,6 +1176,8 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             console.log('📄 DOM Content Loaded - initializing components...');
+            // Enable fast touch-to-click on interactive buttons to remove any perceived delay
+            try { enableFastClicks(); } catch(e) { /* no-op */ }
             
             try {
                 initializeSortable();
@@ -1150,6 +1226,19 @@
             
             console.log('✨ All initialization complete!');
         });
+
+        // FastClick-like shim for immediate touch response on buttons
+        function enableFastClicks(){
+            const interactive = document.querySelectorAll('.tool-btn, .action-btn, .control-btn, .btn-export');
+            interactive.forEach(el => el.setAttribute('data-fast-click','true'));
+            document.addEventListener('touchstart', function(e){
+                const el = e.target.closest('[data-fast-click]');
+                if (!el) return;
+                // prevent generating a delayed click
+                e.preventDefault();
+                el.click();
+            }, { passive: false });
+        }
 
         function initializeSidebarTabs() {
             // Initialize sidebar tabs with debugging
@@ -1229,6 +1318,7 @@
             const sidebar = document.getElementById('sidebarNav');
             const contentArea = document.querySelector('.content-area');
             const contentHeader = document.querySelector('.content-header');
+            const overlay = document.getElementById('overlay');
             
             if (sidebar) {
                 sidebar.classList.toggle('collapsed');
@@ -1236,13 +1326,25 @@
             }
             
             if (contentArea) {
-                contentArea.classList.toggle('sidebar-collapsed');
+                const isCollapsed = sidebar && sidebar.classList.contains('collapsed');
+                contentArea.classList.toggle('sidebar-collapsed', isCollapsed);
                 console.log('Content area collapsed:', contentArea.classList.contains('sidebar-collapsed'));
             }
             
             if (contentHeader) {
-                contentHeader.classList.toggle('sidebar-collapsed');
+                const isCollapsed = sidebar && sidebar.classList.contains('collapsed');
+                contentHeader.classList.toggle('sidebar-collapsed', isCollapsed);
                 console.log('Content header collapsed:', contentHeader.classList.contains('sidebar-collapsed'));
+            }
+
+            // Overlay behavior on mobile
+            if (overlay) {
+                const isCollapsed = sidebar && sidebar.classList.contains('collapsed');
+                if (!isCollapsed && window.innerWidth <= 768) {
+                    overlay.classList.add('active');
+                } else {
+                    overlay.classList.remove('active');
+                }
             }
         }
 
@@ -1264,13 +1366,29 @@
             if (sidebarToggle && sidebar) {
                 sidebarToggle.addEventListener('click', function() {
                     console.log('Event listener triggered');
+                    const overlay = document.getElementById('overlay');
                     sidebar.classList.toggle('collapsed');
-                    contentArea.classList.toggle('sidebar-collapsed');
-                    contentHeader.classList.toggle('sidebar-collapsed');
+                    const isCollapsed = sidebar.classList.contains('collapsed');
+                    contentArea.classList.toggle('sidebar-collapsed', isCollapsed);
+                    contentHeader.classList.toggle('sidebar-collapsed', isCollapsed);
+                    if (overlay) {
+                        if (!isCollapsed && window.innerWidth <= 768) overlay.classList.add('active');
+                        else overlay.classList.remove('active');
+                    }
                 });
                 console.log('Event listener added successfully');
             } else {
                 console.error('Could not find sidebar toggle elements');
+            }
+            // Close sidebar when tapping overlay
+            const overlay = document.getElementById('overlay');
+            if (overlay && sidebar && contentArea && contentHeader) {
+                overlay.addEventListener('click', function(){
+                    sidebar.classList.add('collapsed');
+                    contentArea.classList.add('sidebar-collapsed');
+                    contentHeader.classList.add('sidebar-collapsed');
+                    overlay.classList.remove('active');
+                });
             }
         }
 
@@ -1977,9 +2095,11 @@
             }
         }
 
+        let __saveInFlight = false;
         function saveReportState() {
+            if (__saveInFlight) return; // throttle rapid taps
+            __saveInFlight = true;
             const blocks = collectAllBlocks();
-            
             fetch('/save_report_blocks/', {
                 method: 'POST',
                 headers: {
@@ -1996,7 +2116,8 @@
             })
             .catch(err => {
                 console.error('Failed to save report state:', err);
-            });
+            })
+            .finally(() => { __saveInFlight = false; });
         }
 
         function collectAllBlocks() {
@@ -2015,7 +2136,7 @@
                     case 'text':
                         const textContent = block.querySelector('.block-text');
                         blockData.content = textContent ? textContent.innerHTML : '';
-                        console.log('Text block content:', blockData.content);
+                        // (log suppressed)
                         break;
                         
                     case 'title':
@@ -2024,7 +2145,7 @@
                         // Extract just the text for title
                         const titleText = titleContent ? titleContent.textContent.trim() : '';
                         blockData.title = titleText;
-                        console.log('Title block:', titleText);
+                        // (log suppressed)
                         break;
                         
                     case 'visualization':
@@ -2039,14 +2160,14 @@
                         const eh = parseFloat(block.dataset.exportHeight);
                         if (!isNaN(ew)) blockData.pdf_width_inch = ew;
                         if (!isNaN(eh)) blockData.pdf_height_inch = eh;
-                        console.log('Visualization block:', blockData.chart_title);
+                        // (log suppressed)
                         break;
                         
                     case 'sql':
                         const sqlCode = block.querySelector('.block-sql pre code');
                         blockData.sql_query = sqlCode ? sqlCode.textContent : '';
                         blockData.content = sqlCode ? sqlCode.textContent : '';
-                        console.log('SQL block:', blockData.sql_query);
+                        // (log suppressed)
                         break;
                         
                     case 'chat_message':
@@ -2148,7 +2269,7 @@
                             }
                             blockData.sender = 'AI Assistant';
                         }
-                        console.log('Chat message:', blockData.sender, blockData.content_text || blockData.content);
+                        // (log suppressed)
                         break;
                         
                     case 'image':
@@ -2164,7 +2285,7 @@
                         
                     case 'pagebreak':
                         blockData.content = 'Page Break';
-                        console.log('Page break block');
+                        // (log suppressed)
                         break;
                         
                     case 'query':
@@ -2204,7 +2325,7 @@
                             blockData.has_table = false;
                             console.log('No table found in query block');
                         }
-                        console.log('Query block:', blockData.user_input, 'SQL:', blockData.sql_query);
+                        // (log suppressed)
                         break;
                 }
                 
@@ -2224,7 +2345,7 @@
             }
             
             console.log(`📤 Exporting ${blocks.length} blocks as ${format}`);
-            console.log('Detailed blocks data:', JSON.stringify(blocks, null, 2));
+            // Logging of detailed blocks data removed to avoid performance hit
             
             // Show prominent loading state
             const btn = event.target.closest('button');

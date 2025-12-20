@@ -61,6 +61,7 @@
   </script>
   
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     ::-webkit-scrollbar {
       height: 8px;
       width: 9px;
@@ -264,6 +265,43 @@
       .header-block h1 { font-size: 48px; }
       .about-section { padding: 30px 20px; }
     }
+
+    /* Mobile-first refinements */
+    @media (max-width: 480px) {
+      .container { padding: 32px 16px; }
+      .header-block h1 { font-size: 40px; }
+      .subtitle { font-size: 15px; margin-bottom: 24px; }
+
+      .btn { width: 100%; padding: 14px 20px; }
+      .session-controls { display: flex; flex-direction: column; gap: 10px; }
+      .cleanup-btn { margin-left: 0 !important; }
+
+      /* File preview card should fit mobile width */
+      #filePreview > div { max-width: 100% !important; padding: 12px !important; }
+
+      /* Features in single column for small screens */
+      .features { grid-template-columns: 1fr; }
+      .feature-icon-wrapper { width: 52px; height: 52px; }
+      .feature-card { padding: 16px; }
+      .about-section { padding: 20px; }
+
+      /* Online Dataset Modal input and buttons stacked */
+      #onlineDatasetModal { padding-top: 40px !important; }
+      .search-row { display: flex; flex-direction: column; gap: 10px; }
+      .search-row input { padding-right: 20px !important; }
+      .search-row .search-btn, .search-row .close-btn {
+        position: static !important;
+        transform: none !important;
+        width: 100%;
+        margin-top: 10px;
+      }
+      .search-row .close-btn { order: 2; }
+    }
+
+    /* Hide header actions when a left pane/modal is open on mobile */
+    @media (max-width: 480px) {
+      body.pane-open .header-actions { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -275,14 +313,28 @@
       <p class="subtitle">Exploratory Data Analytics Tool</p>
     </div>
 
-    <!-- Upload -->
-    <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
-      {% csrf_token %}
-      <input type="file" id="fileInput" name="files" accept=".csv,.xlsx,.json" multiple onchange="handleFileUpload()">
-      <label for="fileInput" class="btn">Upload Dataset(s)</label>
-    </form>
-    
-    <!-- File Selection Preview -->
+    <!-- Header Actions (hidden on mobile when pane is open) -->
+    <div class="header-actions">
+      <!-- Upload -->
+      <form id="uploadForm" method="post" enctype="multipart/form-data" action="{% url 'upload_dataset' %}">
+        {% csrf_token %}
+        <input type="file" id="fileInput" name="files" accept=".csv,.xlsx,.json" multiple onchange="handleFileUpload()">
+        <label for="fileInput" class="btn">Upload Dataset(s)</label>
+      </form>
+      
+      <!-- OR Divider -->
+      <div style="margin: 30px 0; text-align: center; position: relative;">
+        <div style="height: 1px; background: linear-gradient(to right, transparent, #333, transparent);"></div>
+        <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #0f0f0f; padding: 0 15px; color: #888; font-size: 14px;">OR</span>
+      </div>
+      
+      <!-- Online Datasets Button -->
+      <button class="btn" onclick="showOnlineDatasets()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 10px;">
+        🌐 Browse Online Datasets
+      </button>
+    </div>
+
+    <!-- File Selection Preview (remains visible) -->
     <div id="filePreview" style="margin-top: 20px; display: none;">
       <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; max-width: 600px; margin: 0 auto;">
         <h3 style="color: #7059f2; margin: 0 0 12px 0; font-size: 16px;">Selected Files:</h3>
@@ -290,17 +342,6 @@
         <button type="button" class="btn" onclick="uploadFiles()" style="width: 100%; margin: 0;">Upload All Files</button>
       </div>
     </div>
-    
-    <!-- OR Divider -->
-    <div style="margin: 30px 0; text-align: center; position: relative;">
-      <div style="height: 1px; background: linear-gradient(to right, transparent, #333, transparent);"></div>
-      <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #0f0f0f; padding: 0 15px; color: #888; font-size: 14px;">OR</span>
-    </div>
-    
-    <!-- Online Datasets Button -->
-    <button class="btn" onclick="showOnlineDatasets()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 10px;">
-      🌐 Browse Online Datasets
-    </button>
 
     <!-- Session Management -->
     <div class="session-controls">
@@ -487,18 +528,18 @@
             <p style="color: #888; font-size: 14px;">Search for any dataset using AI - like Google for data</p>
           </div>
           
-          <div style="position: relative; margin-bottom: 30px;">
+          <div class="search-row" style="position: relative; margin-bottom: 30px;">
             <input type="text" id="datasetSearchInput" placeholder="🔍 Search for datasets (e.g., cricket test match runs, covid data, stock prices)..." 
               style="width: 100%; padding: 16px 60px 16px 20px; background: #1a1a1a; color: #f0f0f0; border: 2px solid #333; border-radius: 50px; font-size: 16px; transition: all 0.3s ease;"
               onkeypress="if(event.key === 'Enter') searchDatasets()"
               onfocus="this.style.borderColor='#7059f2'; this.style.boxShadow='0 0 20px rgba(112, 89, 242, 0.3)';"
               onblur="this.style.borderColor='#333'; this.style.boxShadow='none';">
-            <button onclick="searchDatasets()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 50px; cursor: pointer; font-weight: 500; font-size: 14px; transition: all 0.2s ease;"
+            <button class="search-btn" onclick="searchDatasets()" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 24px; border-radius: 50px; cursor: pointer; font-weight: 500; font-size: 14px; transition: all 0.2s ease;"
               onmouseover="this.style.transform='translateY(-50%) scale(1.05)'"
               onmouseout="this.style.transform='translateY(-50%) scale(1)'">
               Search
             </button>
-            <button onclick="closeOnlineDatasetModal()" style="position: absolute; right: 95px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 10px;">&times;</button>
+            <button class="close-btn" onclick="closeOnlineDatasetModal()" style="position: absolute; right: 95px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #888; font-size: 20px; cursor: pointer; padding: 0 10px;">&times;</button>
           </div>
           
           <div id="searchSuggestions" style="display: none; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
@@ -534,9 +575,13 @@
         setTimeout(() => {
           document.getElementById('datasetSearchInput').focus();
         }, 100);
+        // Mark pane open for mobile header behavior
+        document.body.classList.add('pane-open');
       } else {
         modal.style.display = 'flex';
         document.getElementById('datasetSearchInput').focus();
+        // Mark pane open for mobile header behavior
+        document.body.classList.add('pane-open');
       }
     }
     
@@ -545,6 +590,8 @@
       if (modal) {
         modal.style.display = 'none';
       }
+      // Remove pane-open state when closing modal
+      document.body.classList.remove('pane-open');
     }
     
     function searchDatasets() {

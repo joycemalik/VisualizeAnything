@@ -473,6 +473,11 @@
       gap: 12px;
     }
 
+    /* Hide header controls on mobile when sidebar is open */
+    @media (max-width: 768px) {
+      .main-header:not(.sidebar-collapsed) .header-controls { display: none; }
+    }
+
     .control-btn {
       background: var(--btn-secondary);
       border: 1px solid var(--border-color);
