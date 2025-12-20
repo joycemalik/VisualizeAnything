@@ -517,6 +517,14 @@
             background: #f8f9fa;
             border-radius: 12px;
             margin: 20px 0;
+            color: #000; /* Ensure text over images/cards is visible */
+            position: relative; /* for drag-resize handles */
+        }
+
+        .block-visualization h3,
+        .block-visualization p,
+        .block-visualization span {
+            color: #000; /* Explicitly set to black for better contrast */
         }
 
         .block-visualization img {
@@ -524,6 +532,43 @@
             height: auto;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* Drag-resize UI */
+        .resize-handle {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 14px;
+            height: 14px;
+            background: var(--btn-primary);
+            border: 1px solid var(--border-color);
+            cursor: se-resize;
+            z-index: 20;
+        }
+        .resize-handle-v {
+            position: absolute;
+            left: 50%;
+            bottom: 10px;
+            transform: translateX(-50%);
+            width: 14px;
+            height: 14px;
+            background: var(--btn-primary);
+            border: 1px solid var(--border-color);
+            cursor: ns-resize;
+            z-index: 20;
+        }
+        .resize-tooltip {
+            position: absolute;
+            right: 32px;
+            bottom: 8px;
+            padding: 2px 6px;
+            font-size: 12px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 3px;
+            z-index: 20;
         }
 
         .block-text {
@@ -847,10 +892,6 @@
             </div>
             
             <div class="action-buttons">
-                <button class="action-btn" onclick="previewReport()">
-                    <img src="{% load static %}{% static 'ai.png' %}" alt="preview" class="btn-icon"/>
-                    Preview Report
-                </button>
                 <button class="action-btn secondary" onclick="clearSession()">
                     <i class="fas fa-broom"></i> Clear Session
                 </button>
@@ -875,7 +916,7 @@
 
             <div class="report-canvas">
                 <div class="report-page" id="reportPage">
-                    <!-- Report Title -->
+                    <!-- Initial heading only -->
                     <div class="report-block fade-in" data-block-type="title">
                         <div class="block-toolbar">
                             <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
@@ -887,13 +928,12 @@
                         </div>
                         <div class="block-title">
                             <h1>Data Analysis Report</h1>
-                            <p>{{ dataset_name }} - Generated on {{ "now"|date:"F d, Y" }}</p>
                         </div>
                     </div>
 
                     <!-- Render existing blocks -->
                     {% for block in blocks %}
-                        <div class="report-block fade-in" data-block-type="{{ block.type }}" data-block-index="{{ forloop.counter0 }}">
+                        <div class="report-block fade-in" data-block-type="{{ block.type }}" data-block-index="{{ forloop.counter0 }}" data-export-width="{{ block.pdf_width_inch|default:'' }}" data-export-height="{{ block.pdf_height_inch|default:'' }}">
                             <div class="block-toolbar">
                                 <button class="toolbar-btn" onclick="moveBlockUp(this)" title="Move Up">
                                     <i class="fas fa-arrow-up"></i>
@@ -904,6 +944,7 @@
                                 <button class="toolbar-btn" onclick="editBlock(this)" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </button>
+                                
                                 <button class="toolbar-btn danger" onclick="removeBlock(this)" title="Remove">
                                     <i class="fas fa-trash"></i>
                                 </button>
@@ -1069,12 +1110,8 @@
                 console.error('❌ Sortable init failed:', e);
             }
             
-            try {
-                initializeQuill();
-                console.log('✅ Quill initialized');
-            } catch(e) {
-                console.error('❌ Quill init failed:', e);
-            }
+            // Quill will be initialized on-demand when opening the edit modal
+            console.log('ℹ️ Quill will initialize on first edit');
             
             try {
                 saveCurrentState();
@@ -1095,6 +1132,20 @@
                 console.log('✅ Sidebar toggle initialized');
             } catch(e) {
                 console.error('❌ Sidebar toggle init failed:', e);
+            }
+            
+            try {
+                applyInitialImageSizing();
+                console.log('✅ Applied initial image sizing from saved attributes');
+            } catch(e) {
+                console.error('❌ Initial image sizing failed:', e);
+            }
+            
+            try {
+                attachHoverResize();
+                console.log('✅ Hover-based resize attached');
+            } catch(e) {
+                console.error('❌ Hover resize setup failed:', e);
             }
             
             console.log('✨ All initialization complete!');
@@ -1345,6 +1396,10 @@
             
             const dropZone = document.getElementById('dropZone');
             dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+            const newBlock = dropZone.previousElementSibling;
+            if (newBlock && newBlock.classList.contains('report-block')) {
+                attachHoverResizeForBlock(newBlock);
+            }
             saveCurrentState();
         }
 
@@ -1378,48 +1433,38 @@
                     const allBlocks = Array.from(document.querySelectorAll('.report-block'));
                     const blockIndex = allBlocks.indexOf(block);
                     document.getElementById('editBlockIndex').value = blockIndex;
-                    
-                    // Show modal first
-                    const modal = new bootstrap.Modal(document.getElementById('editTextModal'));
-                    
-                    // Initialize Quill editor when modal is fully shown
-                    document.getElementById('editTextModal').addEventListener('shown.bs.modal', function() {
-                        // Destroy existing Quill instance if it exists
-                        if (window.editQuill) {
-                            try {
-                                window.editQuill = null;
-                            } catch (e) {}
+
+                    // Lazily initialize a single Quill instance and reuse it
+                    if (!quill) {
+                        try {
+                            quill = new Quill('#editor', {
+                                theme: 'snow',
+                                modules: {
+                                    toolbar: [
+                                        ['bold', 'italic', 'underline', 'strike'],
+                                        ['blockquote', 'code-block'],
+                                        [{ 'header': 1 }, { 'header': 2 }],
+                                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                        [{ 'size': ['small', false, 'large', 'huge'] }],
+                                        [{ 'color': [] }, { 'background': [] }],
+                                        ['link', 'image'],
+                                        ['clean']
+                                    ]
+                                }
+                            });
+                            console.log('Quill editor initialized on-demand');
+                        } catch (error) {
+                            console.error('Failed to initialize Quill editor:', error);
+                            showNotification('Error: Failed to initialize text editor', 'error');
+                            return;
                         }
-                        
-                        // Create new Quill instance
-                        setTimeout(() => {
-                            try {
-                                window.editQuill = new Quill('#editor', {
-                                    theme: 'snow',
-                                    modules: {
-                                        toolbar: [
-                                            ['bold', 'italic', 'underline', 'strike'],
-                                            ['blockquote', 'code-block'],
-                                            [{ 'header': 1 }, { 'header': 2 }],
-                                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                                            [{ 'size': ['small', false, 'large', 'huge'] }],
-                                            [{ 'color': [] }, { 'background': [] }],
-                                            ['link'],
-                                            ['clean']
-                                        ]
-                                    }
-                                });
-                                
-                                // Set the content after Quill is ready
-                                window.editQuill.root.innerHTML = content.innerHTML;
-                                console.log('Edit Quill initialized and content loaded');
-                            } catch (error) {
-                                console.error('Failed to initialize edit Quill:', error);
-                                showNotification('Error: Failed to initialize text editor', 'error');
-                            }
-                        }, 100);
-                    }, { once: true });
-                    
+                    }
+
+                    // Load current block content into the editor
+                    quill.root.innerHTML = content.innerHTML;
+
+                    // Show modal
+                    const modal = new bootstrap.Modal(document.getElementById('editTextModal'));
                     modal.show();
                 } else {
                     showNotification('Error: Content not found for editing', 'error');
@@ -1469,12 +1514,12 @@
                 return;
             }
             
-            if (!window.editQuill) {
+            if (!quill) {
                 showNotification('Error: Editor not initialized', 'error');
                 return;
             }
             
-            const content = window.editQuill.root.innerHTML;
+            const content = quill.root.innerHTML;
             contentDiv.innerHTML = content;
             saveCurrentState();
             showNotification('Block content updated!', 'success');
@@ -1485,10 +1530,7 @@
                 modal.hide();
             }
             
-            // Clean up the editor instance
-            if (window.editQuill) {
-                window.editQuill = null;
-            }
+            // Keep Quill instance for reuse; no teardown needed
         }
 
         function removeBlock(btn) {
@@ -1516,6 +1558,183 @@
                 block.parentNode.insertBefore(next, block);
                 saveCurrentState();
             }
+        }
+
+        // Toggle drag-resize mode for image/visualization blocks
+        function editExportSize(btn) {
+            const block = btn.closest('.report-block');
+            if (!block) return;
+            if (block.dataset.resizeActive === 'true') {
+                disableDragResize(block);
+            } else {
+                enableDragResize(block);
+            }
+        }
+
+        function enableDragResize(block) {
+            const img = block.querySelector('img');
+            if (!img) return;
+            // Mark active
+            block.dataset.resizeActive = 'true';
+            // Ensure starting width
+            const startWidthPx = img.clientWidth || img.naturalWidth || 400;
+            const startHeightPx = img.clientHeight || img.naturalHeight || Math.round(startWidthPx * 0.66);
+            img.style.maxWidth = startWidthPx + 'px';
+            img.style.maxHeight = startHeightPx + 'px';
+            // Create handle and tooltip
+            const handle = document.createElement('div');
+            handle.className = 'resize-handle';
+            const vHandle = document.createElement('div');
+            vHandle.className = 'resize-handle-v';
+            const tip = document.createElement('div');
+            tip.className = 'resize-tooltip';
+            const toInches = px => (px / 96).toFixed(2);
+            tip.textContent = `${toInches(startWidthPx)} × ${toInches(startHeightPx)} in`;
+            block.querySelector('.block-visualization').appendChild(handle);
+            block.querySelector('.block-visualization').appendChild(vHandle);
+            block.querySelector('.block-visualization').appendChild(tip);
+
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let baseWidth = startWidthPx;
+            let baseHeight = startHeightPx;
+            let lockRatio = true; // default: keep aspect ratio
+            const aspect = baseWidth / (baseHeight || 1);
+
+            const onMouseDown = (e) => {
+                e.preventDefault();
+                dragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                baseWidth = img.clientWidth;
+                baseHeight = img.clientHeight;
+                lockRatio = !e.shiftKey; // Hold SHIFT to freeform resize
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                if (!block._resize) block._resize = {};
+                block._resize.dragging = true;
+            };
+            const onMouseMove = (e) => {
+                if (!dragging) return;
+                const deltaX = e.clientX - startX;
+                const deltaY = e.clientY - startY;
+                let newW = Math.max(96, baseWidth + deltaX);
+                let newH = Math.max(96, lockRatio ? Math.round(newW / aspect) : (baseHeight + deltaY));
+                img.style.maxWidth = newW + 'px';
+                img.style.maxHeight = newH + 'px';
+                block.dataset.exportWidth = toInches(newW);
+                block.dataset.exportHeight = toInches(newH);
+                tip.textContent = `${toInches(newW)} × ${toInches(newH)} in`;
+            };
+            const onMouseUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                saveCurrentState();
+                showNotification('Size updated for export.', 'success');
+                if (block._resize) block._resize.dragging = false;
+            };
+
+            handle.addEventListener('mousedown', onMouseDown);
+            // Vertical-only resize
+            let vDragging = false;
+            let vStartY = 0;
+            let vBaseHeight = baseHeight;
+            const onVDown = (e) => {
+                e.preventDefault();
+                vDragging = true;
+                vStartY = e.clientY;
+                vBaseHeight = img.clientHeight;
+                document.addEventListener('mousemove', onVMove);
+                document.addEventListener('mouseup', onVUp);
+                if (!block._resize) block._resize = {};
+                block._resize.vDragging = true;
+            };
+            const onVMove = (e) => {
+                if (!vDragging) return;
+                const deltaY = e.clientY - vStartY;
+                let newH = Math.max(96, vBaseHeight + deltaY);
+                img.style.maxHeight = newH + 'px';
+                block.dataset.exportHeight = toInches(newH);
+                // Keep width preview consistent when aspect locked
+                const curW = img.clientWidth;
+                tip.textContent = `${toInches(curW)} × ${toInches(newH)} in`;
+            };
+            const onVUp = () => {
+                if (!vDragging) return;
+                vDragging = false;
+                document.removeEventListener('mousemove', onVMove);
+                document.removeEventListener('mouseup', onVUp);
+                saveCurrentState();
+                showNotification('Height updated for export.', 'success');
+                if (block._resize) block._resize.vDragging = false;
+            };
+            vHandle.addEventListener('mousedown', onVDown);
+            // Store refs for cleanup
+            block._resize = { handle, vHandle, tip, onMouseDown, onVDown };
+        }
+
+        function disableDragResize(block) {
+            block.dataset.resizeActive = 'false';
+            const refs = block._resize;
+            if (refs) {
+                const viz = block.querySelector('.block-visualization');
+                if (refs.handle) {
+                    refs.handle.removeEventListener('mousedown', refs.onMouseDown);
+                    viz && viz.removeChild(refs.handle);
+                }
+                if (refs.vHandle) {
+                    refs.vHandle.removeEventListener('mousedown', refs.onVDown);
+                    viz && viz.removeChild(refs.vHandle);
+                }
+                if (refs.tip) {
+                    viz && viz.removeChild(refs.tip);
+                }
+                block._resize = null;
+            }
+        }
+
+        // Attach hover-based enable/disable for all current image/visualization blocks
+        function attachHoverResize() {
+            const blocks = document.querySelectorAll('.report-block[data-block-type="visualization"], .report-block[data-block-type="image"]');
+            blocks.forEach(block => attachHoverResizeForBlock(block));
+        }
+
+        function attachHoverResizeForBlock(block) {
+            const viz = block.querySelector('.block-visualization');
+            if (!viz) return;
+            // Prevent duplicate listeners
+            if (viz._hoverResizeAttached) return;
+            viz._hoverResizeAttached = true;
+            viz.addEventListener('mouseenter', () => {
+                if (block.dataset.resizeActive !== 'true') {
+                    enableDragResize(block);
+                }
+            });
+            viz.addEventListener('mouseleave', () => {
+                const isDragging = !!(block._resize && (block._resize.dragging || block._resize.vDragging));
+                if (!isDragging && block.dataset.resizeActive === 'true') {
+                    disableDragResize(block);
+                }
+            });
+        }
+
+        function applyInitialImageSizing() {
+            const blocks = document.querySelectorAll('.report-block');
+            blocks.forEach(block => {
+                const w = parseFloat(block.dataset.exportWidth);
+                const h = parseFloat(block.dataset.exportHeight);
+                const img = block.querySelector('img');
+                if (!img) return;
+                if (!isNaN(w)) {
+                    img.style.maxWidth = (w * 96) + 'px';
+                }
+                if (!isNaN(h)) {
+                    img.style.maxHeight = (h * 96) + 'px';
+                }
+            });
         }
 
         function showChatHistory() {
@@ -1667,6 +1886,10 @@
                             
                             const dropZone = document.getElementById('dropZone');
                             dropZone.insertAdjacentHTML('beforebegin', blockHtml);
+                            const newBlock = dropZone.previousElementSibling;
+                            if (newBlock && newBlock.classList.contains('report-block')) {
+                                attachHoverResizeForBlock(newBlock);
+                            }
                             saveCurrentState();
                             showNotification('Chart added to report!', 'success');
                         }
@@ -1811,6 +2034,11 @@
                         blockData.image_url = img ? img.src : '';
                         blockData.chart_title = title ? title.textContent : '';
                         blockData.explanation = explanation ? explanation.textContent : '';
+                        // Include optional export sizing
+                        const ew = parseFloat(block.dataset.exportWidth);
+                        const eh = parseFloat(block.dataset.exportHeight);
+                        if (!isNaN(ew)) blockData.pdf_width_inch = ew;
+                        if (!isNaN(eh)) blockData.pdf_height_inch = eh;
                         console.log('Visualization block:', blockData.chart_title);
                         break;
                         
@@ -1927,6 +2155,10 @@
                         const customImg = block.querySelector('img');
                         blockData.image_url = customImg ? customImg.src : '';
                         blockData.alt_text = customImg ? customImg.alt : '';
+                        const iw = parseFloat(block.dataset.exportWidth);
+                        const ih = parseFloat(block.dataset.exportHeight);
+                        if (!isNaN(iw)) blockData.pdf_width_inch = iw;
+                        if (!isNaN(ih)) blockData.pdf_height_inch = ih;
                         console.log('Image block:', blockData.image_url);
                         break;
                         
@@ -2004,6 +2236,11 @@
             // Show notification that process started
             showNotification(`🔄 Generating your ${format.toUpperCase()} report... Please wait.`, 'info');
             
+            // Ask user for file name
+            const defaultName = (document.querySelector('.block-title h1')?.textContent || 'Data Analysis Report').replace(/[\\\/:*?"<>|]/g, '').trim() || 'Data Analysis Report';
+            const enteredName = prompt(`Enter ${format.toUpperCase()} file name (without extension):`, defaultName);
+            const fileName = (enteredName || defaultName).replace(/[\\\/:*?"<>|]/g, '').trim() || 'Data Analysis Report';
+
             // First save the blocks to session, then generate export
             fetch('/save_report_blocks/', {
                 method: 'POST',
@@ -2030,7 +2267,8 @@
                         body: JSON.stringify({ 
                             blocks: blocks,
                             report_title: document.querySelector('.block-title h1')?.textContent || 'Data Analysis Report',
-                            dataset_name: '{{ dataset_name }}'
+                            dataset_name: '{{ dataset_name }}',
+                            filename: fileName
                         })
                     });
                 } else {
@@ -2039,9 +2277,10 @@
             })
             .then(response => {
                 console.log('📥 Export response status:', response.status, response.statusText);
+                const contentType = response.headers.get('content-type') || '';
                 if (response.ok) {
                     console.log('✅ Export successful, downloading file...');
-                    return response.blob();
+                    return Promise.all([response.blob(), contentType]);
                 } else {
                     return response.text().then(text => {
                         console.error('❌ Export error response:', text);
@@ -2049,12 +2288,17 @@
                     });
                 }
             })
-            .then(blob => {
+            .then(([blob, contentType]) => {
                 console.log('💾 Creating download link for blob size:', blob.size, 'bytes');
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `data_analysis_report_${new Date().getTime()}.${format}`;
+                // Use correct extension based on content type (zip for multiple images)
+                let ext = format;
+                if (contentType.includes('application/zip')) {
+                    ext = 'zip';
+                }
+                a.download = `${fileName}.${ext}`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
@@ -2075,26 +2319,7 @@
             });
         }
 
-        function previewReport() {
-            const reportContent = document.getElementById('reportPage').innerHTML;
-            const previewWindow = window.open('', '_blank');
-            previewWindow.document.write(`
-                <html>
-                <head>
-                    <title>Report Preview</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
-                        .block-toolbar { display: none !important; }
-                        .drop-zone { display: none !important; }
-                    </style>
-                </head>
-                <body>
-                    ${reportContent}
-                </body>
-                </html>
-            `);
-            previewWindow.document.close();
-        }
+        // previewReport removed as the button is no longer present
 
         function showNotification(message, type) {
             // Simple notification system

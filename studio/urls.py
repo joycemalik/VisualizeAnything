@@ -12,6 +12,7 @@ urlpatterns = [
     path('datasets/', views.multi_dataset_preview, name='multi_dataset_preview'),
     path('switch_dataset/<int:dataset_index>/', views.switch_dataset, name='switch_dataset'),
     path('merge_datasets/', views.merge_datasets, name='merge_datasets'),
+    path('remove_dataset/<int:dataset_index>/', views.remove_dataset, name='remove_dataset'),
     path('run_multi_query/', views.run_multi_dataset_query, name='run_multi_query'),
     path('full_dataset/', views.full_dataset, name='full_dataset'),
     path('run_query/<str:dataset_name>/', views.run_query, name='run_query'),

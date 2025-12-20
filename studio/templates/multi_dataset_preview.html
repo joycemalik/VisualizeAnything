@@ -146,6 +146,20 @@
       vertical-align: middle;
     }
 
+    /* Ensure long dataset names don't push action buttons out */
+    .dataset-name {
+      flex: 1;
+      min-width: 0;              /* allow flex item to shrink */
+      overflow-x: auto;          /* enable horizontal scroll when needed */
+      overflow-y: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;   /* default: show ellipsis */
+      scrollbar-width: none;     /* Firefox hide scrollbar */
+    }
+    .dataset-name::-webkit-scrollbar { /* WebKit hide scrollbar */
+      display: none;
+    }
+
 
     .dataset-meta {
       font-size: 12px;
@@ -823,10 +837,10 @@
 
     .voice-btn {
       background: transparent;
-      color: var(--btn-primary);
+      color: white;
       border: 2px solid var(--btn-primary);
       border-radius: 0px;
-      padding: 8px 14px;
+      padding: 12px 14px;
       cursor: pointer;
       font-size: 16px;
       transition: all 0.2s ease;
@@ -1262,7 +1276,7 @@
           <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">DATASETS ({{ datasets|length }})</div>
           <div style="display: flex; flex-direction: column; gap: 6px;">
             {% for ds in datasets %}
-            <button 
+            <div 
               onclick="switchDataset({{ ds.index }})" 
               class="dataset-tab {% if ds.is_active %}active-dataset{% endif %}"
               style="background: {% if ds.is_active %}var(--btn-primary){% else %}var(--bg-secondary){% endif %}; 
@@ -1277,12 +1291,20 @@
                      display: flex;
                      justify-content: space-between;
                      align-items: center;">
-              <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;">
                 <img src="/static/folder.png" alt="Dataset" class="dataset-icon" style="width: 16px;">
-                <span style="font-weight: 500;">{{ ds.display_name }}</span>
+                <span class="dataset-name" title="{{ ds.display_name }}" style="font-weight: 500;">{{ ds.display_name }}</span>
               </div>
-              <span style="font-size: 11px; opacity: 0.8;">{{ ds.shape.0 }}×{{ ds.shape.1 }}</span>
-            </button>
+              <div style="display:flex; align-items:center; gap:8px; flex-shrink: 0;">
+                <span style="font-size: 11px; opacity: 0.8;">{{ ds.shape.0 }}×{{ ds.shape.1 }}</span>
+                {% if datasets|length > 1 %}
+                <button type="button" title="Remove dataset" onclick="event.stopPropagation(); removeDataset({{ ds.index }})" 
+                        style="background: transparent; border: 1px solid var(--border-color); color: {% if ds.is_active %}white{% else %}var(--text-primary){% endif %}; font-size: 12px; padding: 2px 6px; cursor: pointer;">
+                  ✖
+                </button>
+                {% endif %}
+              </div>
+            </div>
             {% endfor %}
           </div>
         </div>
@@ -1467,7 +1489,7 @@
                 style="width:16px; height:16px; object-fit:contain;">
             Save Report
           </button>
-          <button class="control-btn" id="datasetToggle">Dataset</button>
+          <!-- Removed Dataset header button as requested -->
           <button class="theme-toggle" id="themeToggle">🌙</button>
         </div>
       </div>
@@ -1541,7 +1563,6 @@
               <br>
               <div style="background: var(--bg-secondary); padding: 20px; border-radius: 0px; margin: 12px 0; border-left: 3px solid var(--btn-primary);">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
-                  <span style="font-size: 18px;">🔍</span>
                   <strong style="color: var(--text-primary); font-size: 16px; letter-spacing: 0.5px;">DISCOVERED INSIGHTS</strong>
                 </div>
                 
@@ -1791,11 +1812,7 @@ document.addEventListener('DOMContentLoaded', function() {
     overlay.classList.remove('active');
   });
   
-  // Dataset toggle
-  const datasetToggle = document.getElementById('datasetToggle');
-  datasetToggle.addEventListener('click', function() {
-    togglePreviewTable();
-  });
+  // Dataset toggle removed (button no longer present)
   
   function togglePreviewTable() {
     document.getElementById('datasetPreview').classList.toggle('hidden');
@@ -3159,6 +3176,64 @@ function switchDataset(datasetIndex) {
     showNotification('Error switching dataset', 'error');
   });
 }
+
+function removeDataset(datasetIndex) {
+  if (!confirm('Remove this dataset from the session?')) return;
+  fetch(`/remove_dataset/${datasetIndex}/`, {
+    method: 'POST',
+    headers: {
+      'X-CSRFToken': '{{ csrf_token }}',
+      'Content-Type': 'application/json'
+    }
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.status === 'success') {
+      showNotification('Dataset removed.', 'success');
+      window.location.reload();
+    } else {
+      showNotification(data.message || 'Failed to remove dataset', 'error');
+    }
+  })
+  .catch(err => {
+    console.error('Remove dataset error:', err);
+    showNotification('Error removing dataset', 'error');
+  });
+}
+
+// Smoothly scroll long dataset names on hover without affecting layout
+function setupDatasetNameScrolling() {
+  const names = document.querySelectorAll('.dataset-name');
+  names.forEach(el => {
+    let timer = null;
+    const startScroll = () => {
+      if (el.scrollWidth <= el.clientWidth) return; // no overflow
+      let forward = true;
+      timer = setInterval(() => {
+        if (forward) {
+          el.scrollLeft += 2;
+          if (el.scrollLeft >= el.scrollWidth - el.clientWidth) {
+            forward = false;
+          }
+        } else {
+          el.scrollLeft -= 2;
+          if (el.scrollLeft <= 0) {
+            forward = true;
+          }
+        }
+      }, 16); // ~60fps
+    };
+    const stopScroll = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+      el.scrollLeft = 0;
+    };
+    el.addEventListener('mouseenter', startScroll);
+    el.addEventListener('mouseleave', stopScroll);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', setupDatasetNameScrolling);
 
 function showMergeModal() {
   const datasets = JSON.parse(document.getElementById('datasets-json-data').textContent);

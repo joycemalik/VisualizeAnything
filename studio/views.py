@@ -19,6 +19,7 @@ from pptx import Presentation
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
+from django.conf import settings
 from supabase import create_client
 import base64
 from io import BytesIO
@@ -493,7 +494,16 @@ def multi_dataset_preview(request):
         messages.error(request, "No datasets in session.")
         return redirect("index")
     
+    # Clamp active index to valid range to avoid IndexError
     active_index = request.session.get('active_dataset_index', 0)
+    if not isinstance(active_index, int):
+        active_index = 0
+    if datasets_info:
+        max_idx = len(datasets_info) - 1
+        if active_index < 0 or active_index > max_idx:
+            active_index = 0
+            request.session['active_dataset_index'] = active_index
+            request.session.modified = True
     
     # Load all datasets from Supabase
     loaded_datasets = []
@@ -566,9 +576,14 @@ def multi_dataset_preview(request):
         analysis = None
         curious_questions = []
     
+    # Select the loaded profile that matches the active index; fallback to first
+    active_loaded = None
+    if loaded_datasets:
+        active_loaded = next((d for d in loaded_datasets if d.get('index') == active_index), loaded_datasets[0])
+
     context = {
         'datasets': loaded_datasets,
-        'active_dataset': loaded_datasets[active_index] if loaded_datasets else None,
+        'active_dataset': active_loaded,
         'data_profile': data_profile,
         'analysis': analysis,
         'curious_questions': curious_questions,
@@ -768,6 +783,26 @@ def run_multi_dataset_query(request):
         
         # Format response with sanitized data
         result_data = sanitize_for_json(result_df.to_dict('records'))
+
+        # ---- Persist chat + query to session for Enhanced Report Builder ----
+        try:
+            # Save the user query as a chat message
+            save_chat_message(request, "User", query)
+
+            # Save AI response summary (SQL + rows)
+            ai_response = f"Generated SQL Query:\n```sql\n{sql_query}\n```\n\nFound {len(result_data)} results from {dataset_info['display_name']}."
+            save_chat_message(request, "AI Assistant", ai_response)
+
+            # Save full query details for table rendering in reports
+            save_query_result(
+                request,
+                query,
+                sql_query,
+                result_data,
+                suggest_visualization_type(result_df, sql_query)
+            )
+        except Exception as persist_err:
+            print(f"⚠️ Failed to persist chat/query to session: {persist_err}")
         
         return JsonResponse({
             'status': 'success',
@@ -1900,6 +1935,7 @@ def save_report(request, format):
         if request.method == 'POST':
             data = json.loads(request.body)
             blocks = data.get("blocks", [])
+            filename = data.get("filename")  # Optional custom filename from client (without extension)
             
             print(f"[SAVE_REPORT DEBUG] Received POST request for {format} format")
             print(f"[SAVE_REPORT DEBUG] Number of blocks: {len(blocks)}")
@@ -1920,11 +1956,11 @@ def save_report(request, format):
             print(f"[SAVE_REPORT DEBUG] GET request, using session blocks: {len(blocks)}")
         
         if format == "pdf":
-            return generate_comprehensive_pdf(blocks)
+            return generate_comprehensive_pdf(blocks, filename)
         elif format == "pptx":
             return generate_comprehensive_pptx(blocks)
         elif format in ["jpg", "png"]:
-            return generate_report_image(blocks, format)
+            return generate_report_image(blocks, format, filename)
             
     except Exception as e:
         print(f"[SAVE_REPORT DEBUG] Error: {str(e)}")
@@ -1935,7 +1971,7 @@ def save_report(request, format):
     return HttpResponse("Invalid format", status=400)
 
 
-def generate_comprehensive_pdf(blocks):
+def generate_comprehensive_pdf(blocks, filename=None):
     """Generate a comprehensive PDF with chat history, figures, and styling"""
     print(f"[PDF DEBUG] Generating PDF with {len(blocks)} blocks")
     
@@ -2162,32 +2198,87 @@ def generate_comprehensive_pdf(blocks):
                 chart_title = block.get('chart_title', 'Chart')
                 image_url = block.get('image_url', '')
                 explanation = block.get('explanation', '')
-                
+                pdf_w_in = block.get('pdf_width_inch')
+                pdf_h_in = block.get('pdf_height_inch')
+
                 story.append(Paragraph(f"<b>Visualization: {chart_title}</b>", styles['Heading3']))
-                
-                # Handle base64 images
-                if image_url and image_url.startswith('data:'):
+
+                # Embed image from base64 or URL
+                if image_url:
                     try:
-                        header, encoded = image_url.split(',', 1)
-                        image_data = base64.b64decode(encoded)
-                        
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-                            tmp_file.write(image_data)
-                            tmp_file_path = tmp_file.name
-                        
-                        img = Image(tmp_file_path, width=5*inch, height=3*inch)
-                        story.append(img)
-                        
-                        # Clean up temp file
-                        import os
-                        os.unlink(tmp_file_path)
+                        tmp_file_path = None
+                        if image_url.startswith('data:'):
+                            # Base64 data URL
+                            header, encoded = image_url.split(',', 1)
+                            image_data = base64.b64decode(encoded)
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                                tmp_file.write(image_data)
+                                tmp_file_path = tmp_file.name
+                        elif image_url.startswith('http'):
+                            # Remote HTTP/HTTPS image
+                            response = requests.get(image_url, timeout=10)
+                            if response.status_code == 200:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                                    tmp_file.write(response.content)
+                                    tmp_file_path = tmp_file.name
+                            else:
+                                story.append(Paragraph(f"[Image request failed: status {response.status_code}]", styles['Normal']))
+                        else:
+                            # Local/relative path (static/media)
+                            candidate = None
+                            if os.path.isabs(image_url) and os.path.exists(image_url):
+                                candidate = image_url
+                            elif image_url.startswith('/'):
+                                candidate = os.path.join(settings.BASE_DIR, image_url.lstrip('/'))
+                            else:
+                                candidate = os.path.join(settings.BASE_DIR, image_url.replace('/', os.sep))
+                            if candidate and os.path.exists(candidate):
+                                tmp_file_path = candidate
+                        # If we created a temp file, add image to PDF
+                        if tmp_file_path:
+                            img = Image(tmp_file_path)
+                            # Apply custom sizing if provided
+                            try:
+                                if pdf_w_in or pdf_h_in:
+                                    # Determine original image size
+                                    orig_w = getattr(img, 'imageWidth', None)
+                                    orig_h = getattr(img, 'imageHeight', None)
+                                    if pdf_w_in and not pdf_h_in and orig_w and orig_h:
+                                        # Width only, keep aspect ratio
+                                        scale = (float(pdf_w_in) * inch) / float(orig_w)
+                                        img.drawWidth = float(pdf_w_in) * inch
+                                        img.drawHeight = float(orig_h) * scale
+                                    elif pdf_h_in and not pdf_w_in and orig_w and orig_h:
+                                        # Height only, keep aspect ratio
+                                        scale = (float(pdf_h_in) * inch) / float(orig_h)
+                                        img.drawHeight = float(pdf_h_in) * inch
+                                        img.drawWidth = float(orig_w) * scale
+                                    elif pdf_w_in and pdf_h_in:
+                                        # Explicit width and height
+                                        img.drawWidth = float(pdf_w_in) * inch
+                                        img.drawHeight = float(pdf_h_in) * inch
+                                else:
+                                    # Default max bounds
+                                    img._restrictSize(6*inch, 4*inch)
+                            except Exception:
+                                # Fallback fixed size
+                                img.drawWidth = 6*inch
+                                img.drawHeight = 4*inch
+                            story.append(img)
+                            import os
+                            try:
+                                # Only delete if it's a temp file we created (not a permanent local file)
+                                if tmp_file_path and tmp_file_path.startswith(tempfile.gettempdir()):
+                                    os.unlink(tmp_file_path)
+                            except Exception:
+                                pass
                     except Exception as e:
                         story.append(Paragraph(f"[Image could not be loaded: {str(e)}]", styles['Normal']))
-                
+
                 if explanation:
                     story.append(Spacer(1, 10))
                     story.append(Paragraph(explanation, styles['Normal']))
-                
+
                 story.append(Spacer(1, 20))
                 
             elif block_type == 'dataset_schema':
@@ -2328,16 +2419,22 @@ def generate_comprehensive_pdf(blocks):
         doc.build(story)
         buffer.seek(0)
         
+        # Determine filename
+        safe_name = (filename or 'data_analysis_report').strip()
+        if not safe_name:
+            safe_name = 'data_analysis_report'
+        # Remove illegal filename characters
+        safe_name = ''.join(ch for ch in safe_name if ch not in '\\/:*?"<>|').strip()
         response = HttpResponse(buffer, content_type='application/pdf')
-        response['Content-Disposition'] = 'attachment; filename=data_analysis_report.pdf'
+        response['Content-Disposition'] = f'attachment; filename={safe_name}.pdf'
         return response
         
     except Exception as e:
         print(f"Advanced PDF generation failed: {e}")
-        return generate_simple_pdf(blocks)
+        return generate_simple_pdf(blocks, filename)
 
 
-def generate_simple_pdf(blocks):
+def generate_simple_pdf(blocks, filename=None):
     """Simple PDF generation fallback when reportlab is not available"""
     try:
         from reportlab.pdfgen import canvas
@@ -2396,8 +2493,12 @@ def generate_simple_pdf(blocks):
     p.save()
     buffer.seek(0)
     
+    safe_name = (filename or 'data_analysis_report').strip()
+    if not safe_name:
+        safe_name = 'data_analysis_report'
+    safe_name = ''.join(ch for ch in safe_name if ch not in '\\/:*?"<>|').strip()
     response = HttpResponse(buffer, content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename=simple_report.pdf'
+    response['Content-Disposition'] = f'attachment; filename={safe_name}.pdf'
     return response
 
 
@@ -2782,6 +2883,7 @@ def generate_comprehensive_pptx(blocks):
             image_url = block.get('image_url', '')
             if image_url:
                 try:
+                    from PIL import Image as PILImage
                     if image_url.startswith('data:'):
                         # Handle base64 images
                         header, encoded = image_url.split(',', 1)
@@ -2790,25 +2892,44 @@ def generate_comprehensive_pptx(blocks):
                         with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
                             tmp_file.write(image_data)
                             tmp_file_path = tmp_file.name
-                        
-                        slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), Inches(8), Inches(5))
+                        # Preserve aspect ratio
+                        wpx, hpx = PILImage.open(tmp_file_path).size
+                        target_w = Inches(8)
+                        target_h = Inches(8 * hpx / float(wpx))
+                        slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), target_w, target_h)
                         
                         # Clean up
                         import os
                         os.unlink(tmp_file_path)
                     else:
-                        # Handle URL images
-                        response = requests.get(image_url)
-                        if response.status_code == 200:
-                            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-                                tmp_file.write(response.content)
-                                tmp_file_path = tmp_file.name
-                            
-                            slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), Inches(8), Inches(5))
-                            
-                            # Clean up
+                        tmp_file_path = None
+                        if image_url.startswith('http'):
+                            # Handle URL images
+                            response = requests.get(image_url, timeout=10)
+                            if response.status_code == 200:
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                                    tmp_file.write(response.content)
+                                    tmp_file_path = tmp_file.name
+                        else:
+                            # Local/relative path
+                            candidate = None
+                            if os.path.isabs(image_url) and os.path.exists(image_url):
+                                candidate = image_url
+                            elif image_url.startswith('/'):
+                                candidate = os.path.join(settings.BASE_DIR, image_url.lstrip('/'))
+                            else:
+                                candidate = os.path.join(settings.BASE_DIR, image_url.replace('/', os.sep))
+                            if candidate and os.path.exists(candidate):
+                                tmp_file_path = candidate
+                        if tmp_file_path:
+                            wpx, hpx = PILImage.open(tmp_file_path).size
+                            target_w = Inches(8)
+                            target_h = Inches(8 * hpx / float(wpx))
+                            slide.shapes.add_picture(tmp_file_path, Inches(1), Inches(2), target_w, target_h)
+                            # Clean up temp file if created
                             import os
-                            os.unlink(tmp_file_path)
+                            if tmp_file_path.startswith(tempfile.gettempdir()):
+                                os.unlink(tmp_file_path)
                 except Exception as e:
                     # Add error text
                     error_shape = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(2))
@@ -3021,33 +3142,307 @@ def get_chat_history(request):
         })
 
 
-def generate_report_image(blocks, format_type):
-    """Generate report as image using HTML to image conversion"""
-    # This is a simplified version - you might want to use libraries like wkhtmltopdf or playwright
-    html_content = "<html><head><style>body{font-family:Arial;padding:20px;}</style></head><body>"
-    
-    for block in blocks:
-        block_type = block.get('type', '')
-        
-        if block_type == 'chat_message':
-            sender = block.get('sender', 'User')
-            content = block.get('content', '')
-            html_content += f"<div style='margin:10px 0;'><b>{sender}:</b> {content}</div>"
-        elif block_type == 'visualization':
-            title = block.get('chart_title', '')
-            image_url = block.get('image_url', '')
-            html_content += f"<div style='margin:20px 0;'><h3>{title}</h3>"
-            if image_url:
-                html_content += f"<img src='{image_url}' style='max-width:100%;'/>"
-            html_content += "</div>"
-        elif block_type == 'text':
-            content = block.get('content', '')
-            html_content += f"<div style='margin:10px 0;'>{content}</div>"
-    
-    html_content += "</body></html>"
-    
-    # For now, return as HTML - you can implement proper image conversion
-    response = HttpResponse(html_content, content_type='text/html')
+def generate_report_image(blocks, format_type, filename=None):
+    """Export images from report blocks.
+    - Collects all images from visualization and image blocks
+    - Applies optional width/height (inches) if provided
+    - Returns a single image when only one is present, or a ZIP of multiple images
+    """
+    from PIL import Image, ImageOps, ImageDraw, ImageFont
+    import zipfile
+    import tempfile
+    import re
+    import requests
+    from django.utils.text import slugify
+
+    images = []
+
+    # Basic rendering helpers for non-image blocks
+    CANVAS_W = 1280
+    MARGIN = 40
+    BG_COLOR = 'white'
+    FG_COLOR = 'black'
+
+    def get_font(size=16, bold=False):
+        try:
+            # Try a common font if present; fallback to default
+            return ImageFont.truetype("arial.ttf", size)
+        except Exception:
+            return ImageFont.load_default()
+
+    def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int):
+        lines = []
+        for paragraph in (text or '').split('\n'):
+            words = paragraph.split(' ')
+            cur = ''
+            for w in words:
+                trial = (cur + ' ' + w).strip()
+                bbox = draw.textbbox((0,0), trial, font=font)
+                if bbox[2] - bbox[0] <= max_width:
+                    cur = trial
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            # paragraph break
+            lines.append('')
+        # Remove trailing empty line
+        if lines and lines[-1] == '':
+            lines.pop()
+        return lines
+
+    def render_text_block(title: str = None, text: str = '', subtitle: str = None):
+        # Create a canvas tall enough for content (estimate, then grow if needed)
+        img = Image.new('RGB', (CANVAS_W, 200), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        title_font = get_font(28)
+        body_font = get_font(18)
+        y = MARGIN
+        max_text_w = CANVAS_W - 2*MARGIN
+        # Title
+        if title:
+            draw.text((MARGIN, y), title, fill=FG_COLOR, font=title_font)
+            y += 42
+        if subtitle:
+            draw.text((MARGIN, y), subtitle, fill=FG_COLOR, font=body_font)
+            y += 32
+        # Body
+        lines = wrap_text(draw, text, body_font, max_text_w)
+        for line in lines:
+            if line == '':
+                y += 12
+                continue
+            draw.text((MARGIN, y), line, fill=FG_COLOR, font=body_font)
+            y += 26
+        # Extend canvas height if needed
+        final_h = max(y + MARGIN, 200)
+        if final_h != img.size[1]:
+            new_img = Image.new('RGB', (CANVAS_W, final_h), BG_COLOR)
+            new_img.paste(img, (0,0))
+            img = new_img
+        return img
+
+    def render_table(title: str, headers: list, rows: list):
+        # Limit rows for image size
+        headers = headers or []
+        rows = rows or []
+        max_rows = 30
+        rows = rows[:max_rows]
+        title_font = get_font(24)
+        cell_font = get_font(16)
+        draw_dummy = ImageDraw.Draw(Image.new('RGB', (10,10)))
+        # Compute column widths evenly
+        cols = len(headers)
+        cols = max(cols, 1)
+        table_w = CANVAS_W - 2*MARGIN
+        col_w = table_w // cols
+        row_h = 28
+        header_h = 34
+        table_h = header_h + len(rows)*row_h
+        # Canvas height includes title and margins
+        top_area = MARGIN + 40  # title space
+        img_h = top_area + table_h + MARGIN
+        img = Image.new('RGB', (CANVAS_W, img_h), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        y = MARGIN
+        # Title
+        if title:
+            draw.text((MARGIN, y), title, fill=FG_COLOR, font=title_font)
+        y += 40
+        # Header background
+        draw.rectangle([MARGIN, y, MARGIN+table_w, y+header_h], outline='black', fill='#eeeeee')
+        # Header cells
+        for ci in range(cols):
+            x0 = MARGIN + ci*col_w
+            x1 = x0 + col_w
+            draw.rectangle([x0, y, x1, y+header_h], outline='black')
+            head_text = str(headers[ci]) if ci < len(headers) else ''
+            draw.text((x0+6, y+8), head_text, fill=FG_COLOR, font=get_font(16))
+        y += header_h
+        # Rows
+        for r in rows:
+            for ci in range(cols):
+                x0 = MARGIN + ci*col_w
+                x1 = x0 + col_w
+                draw.rectangle([x0, y, x1, y+row_h], outline='#999999')
+                cell_text = str(r.get(headers[ci], '')) if ci < len(headers) else ''
+                draw.text((x0+6, y+6), cell_text, fill=FG_COLOR, font=cell_font)
+            y += row_h
+        return img
+
+    def load_image_from_url(url: str):
+        if url.startswith('data:'):
+            try:
+                header, encoded = url.split(',', 1)
+                raw = base64.b64decode(encoded)
+                return Image.open(BytesIO(raw))
+            except Exception as e:
+                print(f"[IMG EXPORT] Failed to decode base64 image: {e}")
+                return None
+        elif url.startswith('http'):
+            try:
+                r = requests.get(url, timeout=15)
+                r.raise_for_status()
+                return Image.open(BytesIO(r.content))
+            except Exception as e:
+                print(f"[IMG EXPORT] HTTP image fetch failed: {e}")
+                return None
+        else:
+            # Local path resolution
+            candidate = None
+            if os.path.isabs(url) and os.path.exists(url):
+                candidate = url
+            elif url.startswith('/'):
+                candidate = os.path.join(settings.BASE_DIR, url.lstrip('/'))
+            else:
+                candidate = os.path.join(settings.BASE_DIR, url.replace('/', os.sep))
+            try:
+                if candidate and os.path.exists(candidate):
+                    return Image.open(candidate)
+            except Exception as e:
+                print(f"[IMG EXPORT] Local image open failed: {e}")
+            return None
+
+    DPI = 96.0
+
+    for idx, block in enumerate(blocks):
+        btype = block.get('type')
+        if btype not in ('visualization', 'image'):
+            # Render non-image blocks
+            if btype == 'title':
+                title_text = block.get('title') or block.get('content', '')
+                img = render_text_block(title=title_text)
+                safe_name = slugify((title_text or 'title')[:80]) or f"title-{idx+1:03d}"
+                images.append((safe_name, img))
+                continue
+            if btype == 'text':
+                content = block.get('content', '')
+                # strip basic tags
+                try:
+                    import re
+                    content = re.sub('<[^<]+?>', '', content)
+                except Exception:
+                    pass
+                img = render_text_block(text=content)
+                safe_name = f"text-{idx+1:03d}"
+                images.append((safe_name, img))
+                continue
+            if btype == 'chat_message':
+                sender = block.get('sender', 'Message')
+                content = block.get('content', '')
+                try:
+                    import re
+                    content = re.sub('<[^<]+?>', '', content)
+                except Exception:
+                    pass
+                img = render_text_block(title=sender, text=content)
+                safe_name = slugify(sender) or f"chat-{idx+1:03d}"
+                images.append((safe_name, img))
+                continue
+            if btype == 'query':
+                title = 'Query Results'
+                data = block.get('result_data', [])
+                headers = list(data[0].keys()) if data else []
+                img = render_table(title, headers, data)
+                safe_name = f"query-{idx+1:03d}"
+                images.append((safe_name, img))
+                continue
+            if btype == 'query_table':
+                title = block.get('title', 'Query Table')
+                data = block.get('data', [])
+                headers = list(data[0].keys()) if data else []
+                img = render_table(title, headers, data)
+                safe_name = slugify(title) or f"table-{idx+1:03d}"
+                images.append((safe_name, img))
+                continue
+            # Skip other block types
+            continue
+        url = block.get('image_url')
+        if not url:
+            continue
+        img = load_image_from_url(url)
+        if img is None:
+            continue
+
+        # Apply sizing if provided
+        w_in = block.get('pdf_width_inch')
+        h_in = block.get('pdf_height_inch')
+        try:
+            if w_in or h_in:
+                ow, oh = img.size
+                if w_in and not h_in:
+                    new_w = int(float(w_in) * DPI)
+                    new_h = int(oh * (new_w / ow))
+                    img = img.resize((max(1, new_w), max(1, new_h)), Image.LANCZOS)
+                elif h_in and not w_in:
+                    new_h = int(float(h_in) * DPI)
+                    new_w = int(ow * (new_h / oh))
+                    img = img.resize((max(1, new_w), max(1, new_h)), Image.LANCZOS)
+                elif w_in and h_in:
+                    new_w = int(float(w_in) * DPI)
+                    new_h = int(float(h_in) * DPI)
+                    img = img.resize((max(1, new_w), max(1, new_h)), Image.LANCZOS)
+        except Exception as e:
+            print(f"[IMG EXPORT] Resize failed: {e}")
+
+        title = block.get('chart_title') or block.get('alt_text') or f"image_{idx+1}"
+        safe_name = slugify(title) or f"image-{idx+1:03d}"
+        images.append((safe_name, img))
+
+    if not images:
+        return JsonResponse({'error': 'No images found to export'}, status=400)
+
+    # Single image: return directly
+    if len(images) == 1:
+        name, img = images[0]
+        buf = BytesIO()
+        if format_type == 'jpg':
+            # Ensure RGB for JPEG and flatten transparency onto white
+            if img.mode in ('RGBA', 'P'):
+                bg = Image.new('RGB', img.size, 'white')
+                try:
+                    alpha = img.split()[3] if img.mode == 'RGBA' else None
+                    bg.paste(img, mask=alpha)
+                    img = bg
+                except Exception:
+                    img = img.convert('RGB')
+            else:
+                img = img.convert('RGB')
+            img.save(buf, format='JPEG', quality=90)
+            content_type = 'image/jpeg'
+            ext = 'jpg'
+        else:
+            img.save(buf, format='PNG')
+            content_type = 'image/png'
+            ext = 'png'
+        buf.seek(0)
+        download_name = (filename or name) + f'.{ext}'
+        resp = HttpResponse(buf.getvalue(), content_type=content_type)
+        resp['Content-Disposition'] = f'attachment; filename="{download_name}"'
+        return resp
+
+    # Multiple images: zip them
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for i, (name, img) in enumerate(images, start=1):
+            img_buf = BytesIO()
+            if format_type == 'jpg':
+                if img.mode in ('RGBA', 'P'):
+                    img = img.convert('RGB')
+                img.save(img_buf, format='JPEG', quality=90)
+                ext = 'jpg'
+            else:
+                img.save(img_buf, format='PNG')
+                ext = 'png'
+            img_buf.seek(0)
+            filename_in_zip = f"{i:03d}_{name}.{ext}"
+            zf.writestr(filename_in_zip, img_buf.getvalue())
+    zip_buf.seek(0)
+    download_name = (filename or 'report_images') + '.zip'
+    response = HttpResponse(zip_buf.getvalue(), content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="{download_name}"'
     return response
 
 
@@ -3145,77 +3540,8 @@ def save_query_table(request, query_description, result_data, user_input="", sql
 
 def report_builder(request):
     """Enhanced report builder with complete chat history and editing capabilities"""
-    # Get all session data
-    chat_history = request.session.get("chat_history", [])
-    visualizations = request.session.get("visualizations", [])
-    tables = request.session.get("tables", [])
-    dataset_schemas = request.session.get("dataset_schemas", [])
-    query_tables = request.session.get("query_tables", [])
-    
-    # Debug logging
-    print(f"DEBUG Report Builder - Chat history: {len(chat_history)} items")
-    print(f"DEBUG Report Builder - Visualizations: {len(visualizations)} items") 
-    print(f"DEBUG Report Builder - Tables: {len(tables)} items")
-    print(f"DEBUG Report Builder - Dataset schemas: {len(dataset_schemas)} items")
-    print(f"DEBUG Report Builder - Query tables: {len(query_tables)} items")
-    
-    # ALWAYS rebuild report blocks from current session data to include all new items
-    # Build report blocks from session data
+    # Start with an empty canvas: do not auto-populate from session
     blocks = []
-    
-    # Combine and sort all blocks by timestamp if available
-    all_items = []
-    
-    # Add dataset schemas first
-    for item in dataset_schemas:
-        if 'timestamp' in item:
-            all_items.append(item)
-        else:
-            item['timestamp'] = datetime.utcnow().isoformat()
-            all_items.append(item)
-    
-    # Add chat messages
-    for item in chat_history:
-        if 'timestamp' in item:
-            all_items.append(item)
-        else:
-            item['timestamp'] = datetime.utcnow().isoformat()
-            all_items.append(item)
-    
-    # Add visualizations  
-    for item in visualizations:
-        if 'timestamp' in item:
-            all_items.append(item)
-        else:
-            item['timestamp'] = datetime.utcnow().isoformat()
-            all_items.append(item)
-    
-    # Add query tables
-    for item in query_tables:
-        if 'timestamp' in item:
-            all_items.append(item)
-        else:
-            item['timestamp'] = datetime.utcnow().isoformat()
-            all_items.append(item)
-    
-    # Add other tables
-    for item in tables:
-        if 'timestamp' in item:
-            all_items.append(item)
-        else:
-            item['timestamp'] = datetime.utcnow().isoformat()
-            all_items.append(item)
-    
-    # Sort by timestamp
-    try:
-        all_items.sort(key=lambda x: x.get('timestamp', ''))
-    except:
-        pass  # If timestamp sorting fails, keep original order
-    
-    # Save to session
-    request.session['report_blocks'] = all_items
-    request.session.modified = True  # Ensure session is saved
-    blocks = all_items
     
     # Get dataset info for context
     dataset_display_name = request.session.get("dataset_display_name", "Dataset")
@@ -3571,6 +3897,59 @@ def session_cleanup_endpoint(request):
             })
     
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
+
+def remove_dataset(request, dataset_index):
+    """Remove a dataset from the current session (and optionally its uploaded file)."""
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+
+    try:
+        datasets_info = request.session.get('datasets', [])
+        if not (0 <= dataset_index < len(datasets_info)):
+            return JsonResponse({'status': 'error', 'message': 'Invalid dataset index'})
+
+        dataset_info = datasets_info[dataset_index]
+        path_in_bucket = dataset_info.get('supabase_path')
+
+        # Remove dataset entry from session list
+        del datasets_info[dataset_index]
+        request.session['datasets'] = datasets_info
+
+        # Adjust active dataset index
+        active_index = request.session.get('active_dataset_index', 0)
+        if len(datasets_info) == 0:
+            request.session['active_dataset_index'] = 0
+            request.session['current_dataset_path'] = None
+        else:
+            if dataset_index < active_index:
+                active_index -= 1
+            elif dataset_index == active_index:
+                # Move to nearest valid index
+                active_index = min(active_index, len(datasets_info) - 1)
+            request.session['active_dataset_index'] = active_index
+            # Update backward-compat path
+            request.session['current_dataset_path'] = datasets_info[active_index]['supabase_path']
+
+        request.session.modified = True
+
+        # Try to delete the file from Supabase storage (best-effort)
+        try:
+            if path_in_bucket:
+                supabase.storage.from_(SUPABASE_BUCKET).remove([path_in_bucket])
+                print(f"🗑️ Deleted dataset file from Supabase: {path_in_bucket}")
+        except Exception as del_err:
+            print(f"⚠️ Could not delete dataset file: {del_err}")
+
+        return JsonResponse({
+            'status': 'success',
+            'remaining': len(datasets_info),
+            'active_index': request.session.get('active_dataset_index', 0)
+        })
+
+    except Exception as e:
+        print(f"❌ remove_dataset failed: {e}")
+        return JsonResponse({'status': 'error', 'message': str(e)})
 
 def session_end_cleanup(request):
     """Handle cleanup when session ends (browser close, timeout, etc.)"""
